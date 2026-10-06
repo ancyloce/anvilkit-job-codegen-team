@@ -1,0 +1,77 @@
+# anvilkit-codegen team configuration (reviewed, secret-free; baked into the
+# image at /etc/anvilkit/anvilkit-codegen/team.yaml, root-owned and
+# unreadable by the candidate UID). Read by the trusted coordinator of this
+# package (src/config.ts) and part of the team profile digest that binds
+# every accepted stage. Nothing here has a default: every bound the run must
+# hold is stated, and a missing one refuses the run instead of inventing an
+# allowance (delivery.md P12-04).
+schemaVersion: 1
+# route: the reviewed Model Proxy route every role uses (the Proxy serves it
+# only when its configuration enables it and carries the reviewed tools of
+# agent/team/tools.json); contextWindow and maxTokens are what Pi's session
+# is told about the route, never a transport fact. exposurePerSend is what
+# Control reserves for one send on the route: the Proxy reserves the route's
+# reviewed full bound (its limits.max_exposure) for every send, whatever a
+# caller declares, so every call of the team declares and is accounted at
+# exactly this amount. It must equal the route's max_exposure of the
+# deployed Proxy configuration.
+route:
+  id: controlled-openai-v1
+  contextWindow: 128000
+  maxTokens: 4096
+  exposurePerSend: "1000000"
+# currency and the exposure amounts are Control's Money (scale-6 integer
+# units of the currency, as the P06 prices state them).
+currency: USD
+# parallelism bounds the calls in flight at once (the reviewer fan-out);
+# LangGraph 1.4.15 needs at least 2 for a Send fan-out.
+parallelism: 2
+recursionLimit: 64
+deadlineMarginSeconds: 30
+# roles: per role the calls (each accounted at route.exposurePerSend) and
+# the output tokens per call.
+roles:
+  planner: { maxCalls: 2, maxOutputTokens: 2048 }
+  retrieval: { maxCalls: 2, maxOutputTokens: 1024 }
+  coder: { maxCalls: 40, maxOutputTokens: 4096 }
+  code_reviewer: { maxCalls: 3, maxOutputTokens: 2048 }
+  security_reviewer: { maxCalls: 3, maxOutputTokens: 2048 }
+# aggregate: the calls of the whole run and the exposure they may account
+# (calls x exposurePerSend, held in flight or consumed at Control). An
+# operation allocation that covers aggregate.exposure is never exceeded by
+# the team's own sends; Control denies a send any smaller allocation cannot
+# hold, and the run then ends model_denied, never as a candidate defect.
+aggregate: { maxCalls: 50, exposure: "50000000" }
+# reviews: review rounds (the initial one and after repairs); repairs: the
+# bounded returns to the coder after a repairable validator result.
+reviews: { max: 2 }
+repairs: { max: 2 }
+# compaction: Pi's automatic summarization (a controlled call like any other).
+compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 8192 }
+# tools: the file tools the Pi coder holds (no shell).
+tools: [read, write, edit, ls, grep, find]
+source:
+  maxFiles: 256
+  maxFileBytes: 1048576
+  maxTotalBytes: 16777216
+  maxSessionBytes: 8388608
+  maxReviewBytes: 262144
+# validation: the independent validator's chain over the sealed source of
+# every round (jobs/validator, the image's copy under /anvilkit/validator),
+# its build, SSR and browser steps under the candidate identity.
+validation:
+  mode: validator
+  validator:
+    package: /anvilkit/validator
+    node: /usr/local/bin/node
+    identity: setpriv
+    uid: 10001
+    gid: 10001
+    ssr: true
+    browser: true
+    timeoutSeconds: 900
+    buildSupportProfile: build-support-dev-v1
+    hostAbi: host-abi-dev-v1
+    validatorProfile: validator-dev-v1
+    contractsDir: /anvilkit/contracts
+    browsersPath: /anvilkit/ms-playwright

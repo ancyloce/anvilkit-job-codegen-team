@@ -1,0 +1,44 @@
+{
+  "name": "@anvilkit/codegen-team",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Bounded LangGraph/Pi coding team of the codegen Job (DD-03 \u00a71\u2013\u00a73, delivery.md P12): the trusted coordinator (fixed Planner, Retrieval, Code Reviewer and Security Reviewer roles over the access sidecar's controlled model relay, the joint stage store over SqliteSaver) and the one Pi source writer that runs as the candidate of the trusted supervisor (anvilkit-job-codegen-supervisor), with which it speaks the codegen process protocol of anvilkit-agent-contracts. Every model send needs its own single-use Control admission through the Model Proxy; nothing here holds a credential or reaches a provider.",
+  "type": "module",
+  "packageManager": "pnpm@12.3.4",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check-types": "tsc --noEmit -p tsconfig.json",
+    "lint": "biome check src test",
+    "test": "vitest run",
+    "tools:check": "node dist/tools.js --check",
+    "protocol:check": "sh tools/sync-protocol.sh --check"
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "0.85.1",
+    "@earendil-works/pi-ai": "0.85.1",
+    "@earendil-works/pi-coding-agent": "0.85.1",
+    "@langchain/core": "1.2.11",
+    "@langchain/langgraph": "1.4.15",
+    "@langchain/langgraph-checkpoint": "1.1.5",
+    "@langchain/langgraph-checkpoint-sqlite": "1.0.4",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "better-sqlite3": "12.11.1",
+    "eventsource-parser": "4.1.1",
+    "jsonc-parser": "3.3.1",
+    "tar": "7.5.22",
+    "yaml": "2.9.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.12",
+    "@types/better-sqlite3": "9.6.0",
+    "@types/node": "24.13.5",
+    "eventsource-encoder": "1.0.2",
+    "tsx": "4.23.13",
+    "typescript": "5.9.3",
+    "vitest": "5.0.1"
+  }
+}

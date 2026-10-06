@@ -1,0 +1,18 @@
+# This directory is its own pnpm workspace root (one package), independent of
+# the parent's workspace globs, as jobs/validator and the Model Proxy are: the
+# lockfile here pins the Pi coding SDK (the same @earendil-works/pi-ai 0.85.1
+# the Proxy inspects), LangGraph.js with its SQLite checkpoint saver, and the
+# toolchain of the trusted coordinator.
+packages: []
+# Lifecycle scripts: only better-sqlite3's install script runs (it places the
+# prebuilt native binary of the pinned version; the SqliteSaver of the
+# checkpointer needs it). Every other script is denied on this trusted side:
+# esbuild's postinstall only fetches a platform binary when its optional
+# platform package is absent (it is present); @google/genai (a pi-ai provider
+# path this build never enables) has a no-op preinstall echo; protobufjs (a
+# transitive of the Google provider path) only prints a notice.
+allowBuilds:
+  better-sqlite3: true
+  '@google/genai': false
+  esbuild: false
+  protobufjs: false
