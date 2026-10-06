@@ -1,0 +1,82 @@
+# Independent verification of anvilkit-job-codegen-team: the locked install,
+# type check, Biome, build, the reviewed tools document against this build,
+# the tests (a countable sidecar double, the Pi coder as a real child
+# process, the coordinator over the process protocol, and the independent
+# validator's real chain from the validator repository at its pinned commit),
+# the protocol copy against its source, and the final Codegen Job image with
+# its smoke check. Every input outside this repository is pinned here.
+name: ci
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+env:
+  # anvilkit-agent-contracts commit holding jobs/codegen/protocol.schema.json
+  # and the job and component schemas the coordinator validates against:
+  # set to the published commit before this workflow can pass (README.md).
+  CONTRACTS_REF: PENDING-CONTRACTS-COMMIT
+  # anvilkit-job-codegen-supervisor commit whose sources the image builds
+  # (the named build context "supervisor"): set to the published commit.
+  SUPERVISOR_REF: PENDING-SUPERVISOR-COMMIT
+  # anvilkit-job-validator commit of the hero fixture and the validator chain
+  # the tests run (the one the image's base digest was built from).
+  VALIDATOR_REF: 9ccae5a6adeb86b4e512aa6d4dc95fb610d9f500
+jobs:
+  node:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: ancyloce/anvilkit-agent-contracts
+          ref: ${{ env.CONTRACTS_REF }}
+          path: .ci/contracts
+      - uses: actions/checkout@v4
+        with:
+          repository: ancyloce/anvilkit-job-validator
+          ref: ${{ env.VALIDATOR_REF }}
+          path: .ci/validator
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.19.0"
+      - run: npm install -g pnpm@12.3.4
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run check-types
+      - run: pnpm run lint
+      - run: pnpm run build
+      - run: pnpm run tools:check
+      - name: the validator package and its browser for the real validation chain
+        working-directory: .ci/validator
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run build
+          pnpm exec playwright install --with-deps chromium-headless-shell
+      - run: pnpm run test
+        env:
+          ANVILKIT_CODEGEN_TEAM_CONTRACTS_DIR: ${{ github.workspace }}/.ci/contracts
+          ANVILKIT_VALIDATOR_PACKAGE: ${{ github.workspace }}/.ci/validator
+          ANVILKIT_REQUIRE_VALIDATOR: "1"
+  protocol:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: ancyloce/anvilkit-agent-contracts
+          ref: ${{ env.CONTRACTS_REF }}
+          path: .ci/contracts
+      - run: sh tools/sync-protocol.sh --check .ci/contracts
+  image:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: ancyloce/anvilkit-job-codegen-supervisor
+          ref: ${{ env.SUPERVISOR_REF }}
+          path: .ci/supervisor
+      # The validator base is pulled by the digest the Dockerfile pins, from
+      # the registry its VALIDATOR_REPOSITORY default names.
+      - run: docker build --build-context supervisor=.ci/supervisor -t anvilkit-codegen-team:ci .
+      - run: sh tools/image-smoke.sh anvilkit-codegen-team:ci
