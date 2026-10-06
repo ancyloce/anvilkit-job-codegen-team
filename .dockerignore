@@ -1,0 +1,12 @@
+.git
+.github
+node_modules
+dist
+test
+tools
+README.md
+Dockerfile
+.dockerignore
+contract/fixtures.json
+contract/SOURCE
+.ci
