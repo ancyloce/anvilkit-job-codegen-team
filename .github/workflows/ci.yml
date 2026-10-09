@@ -14,8 +14,8 @@ on:
 env:
   # anvilkit-agent-contracts commit holding jobs/codegen/protocol.schema.json
   # and the job and component schemas the coordinator validates against:
-  # the published commit of tag go/v0.1.7 (README.md).
-  CONTRACTS_REF: d8fd757643bc725003116a0092e66b16df69f77a
+  # the published commit of tag go/v0.1.8 (README.md).
+  CONTRACTS_REF: 7d53c8e50386b2ae9b640d11e12c2cfc7d912bd8
   # anvilkit-job-codegen-supervisor commit whose sources the image builds
   # (the named build context "supervisor"): set to the published commit.
   SUPERVISOR_REF: PENDING-SUPERVISOR-COMMIT
