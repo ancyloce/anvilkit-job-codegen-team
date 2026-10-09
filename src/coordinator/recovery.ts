@@ -7,18 +7,24 @@
 // and the repair and review counters and the budget accounting continue
 // from the prior manifest — they never reset. Nothing of the prior attempt's calls is replayed: the
 // run is new, seeded from a proven computation boundary. Without those
-// inputs the run starts fresh from the frozen brief.
-import { readFileSync } from "node:fs";
+// inputs the run starts fresh from the frozen brief. The proven source is
+// unpacked into the trusted side's read-only prior tree
+// (<workspace>/prior/source, root-owned, candidate-readable): the Pi coder
+// of the repair round copies it into its own writable source directory
+// before it writes (coder.ts), so the round repairs the prior source as the
+// candidate identity and the trusted tree stays the proven bytes.
+import { readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import type { BudgetState } from "../budget.js";
 import { type Digest, sha256 } from "../digest.js";
+import { trustedDir } from "../executor.js";
 import { stageArchiveMember } from "../stage/archive.js";
 import { type StageManifest, StageRefusedError } from "../stage/manifest.js";
 import { importPrior, type ProvenStage } from "../stage/proof.js";
 import type { StageStore } from "../stage/store.js";
 import type { Brief } from "../team/roles.js";
 import type { RoundSummary, ValidationRecord } from "../team/state.js";
-import { type CoordinatorInputs, parseBrief } from "./inputs.js";
+import { bindLaunchIdentity, type CoordinatorInputs, parseBrief } from "./inputs.js";
 
 /** What a prior accepted stage seeds into this attempt's run. */
 export interface PriorSeed {
@@ -43,7 +49,10 @@ export async function decideRecovery(
 	if (proven) return { kind: "accepted", proven };
 	if (!inputs.envelope.inputs.some((i) => i.name === "brief"))
 		throw new Error("the launch envelope names no brief input");
-	const brief = parseBrief(readFileSync(path.join(inputs.inputDir, "brief"), "utf8"));
+	const brief = bindLaunchIdentity(
+		parseBrief(readFileSync(path.join(inputs.inputDir, "brief"), "utf8")),
+		inputs.envelope,
+	);
 	return { kind: "run", brief, prior: await importPriorBoundary(inputs, log) };
 }
 
@@ -74,7 +83,14 @@ async function importPriorBoundary(
 			"STALE_STAGE",
 			`Control records no accepted stage of attempt ${priorAttemptId} for this operation`,
 		);
-	const sourceDir = path.join(workspace, "w", "source");
+	// The prior tree is the trusted side's, created before any candidate
+	// runs and proven to be a real directory of this identity closed to group
+	// and other writes; a source left in it by an earlier coordinator of the
+	// launch is replaced, never merged.
+	const priorDir = path.join(workspace, "prior");
+	trustedDir(priorDir);
+	const sourceDir = path.join(priorDir, "source");
+	rmSync(sourceDir, { recursive: true, force: true });
 	const boundary = await importPrior(
 		{ stage, source, stageDigest: stageInput.digest as Digest, sourceDigest: sourceInput.digest as Digest },
 		accepted,
@@ -114,7 +130,8 @@ async function importPriorBoundary(
 		round: priorRound,
 		kind: priorRound > 1 ? "repair" : "code",
 		sourceRevision: boundary.sourceRevision,
-		sealedDir: sourceDir,
+		// As for a sealed round: the directory holding source/ (here the prior tree).
+		sealedDir: priorDir,
 		manifestDigest: boundary.manifest.source?.manifestDigest,
 		files: boundary.files.length,
 		calls: 0,

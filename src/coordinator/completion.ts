@@ -7,6 +7,7 @@
 import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { CandidateRoundRefusedError } from "../executor.js";
+import { IdentityMismatchError } from "../identity.js";
 import { encodeResult, protocolVersion, type TeamResult } from "../protocol.js";
 import { StageRefusedError, verdictFor } from "../stage/manifest.js";
 import type { ProvenStage } from "../stage/proof.js";
@@ -68,6 +69,13 @@ export class Completion {
 		const detail = (e?.message ?? String(err)).slice(0, 1000);
 		if (err instanceof RunCanceledError || (err instanceof StageRefusedError && err.code === "CANCELED")) {
 			this.setOutcome({ kind: "canceled", detail });
+		} else if (err instanceof IdentityMismatchError) {
+			// The launch's own inputs name two identities: nothing ran, and the
+			// named code is the class.
+			this.setOutcome(
+				{ kind: "infrastructure_failed", failureCode: err.code, detail },
+				{ verdict: "infrastructure_failed", failureCode: err.code },
+			);
 		} else if (err instanceof CandidateRoundRefusedError) {
 			this.setOutcome({ kind: "infrastructure_failed", failureCode: err.code, detail });
 			this.result.failureCode = "OBSERVER_FAILED";

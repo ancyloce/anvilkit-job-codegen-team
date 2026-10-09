@@ -12,6 +12,7 @@ import { type Scope, SidecarClient } from "../adapters/sidecar.js";
 import { loadTeamConfig, type TeamConfig } from "../config.js";
 import { parseStrictObject, validateAgainst, validateSchema } from "../contracts.js";
 import type { Digest } from "../digest.js";
+import { type ComponentIdentity, IdentityMismatchError } from "../identity.js";
 import { loadProtocolContract } from "../protocol.js";
 import { sha256Parts } from "../source.js";
 import { type StageIdentity, stageFormat } from "../stage/manifest.js";
@@ -43,6 +44,11 @@ export interface Envelope {
 	executionEpoch: string;
 	launchEpoch: string;
 	deadline: string;
+	/**
+	 * What the launch binds (P0.8; optional in the jobs contract): the source
+	 * revision always, the allocated identity all three members or none.
+	 */
+	component?: Partial<ComponentIdentity> & { sourceRevision: string };
 	inputs: Array<{ name: string; digest: string; handle?: string }>;
 }
 
@@ -88,8 +94,8 @@ const briefSchema: Record<string, unknown> = {
 	},
 };
 
-/** The frozen brief as the trusted input names it (brief.json of the launch inputs). */
-export function parseBrief(text: string): Brief & { sourceRevision: string } {
+/** The frozen brief as the trusted input names it (brief.json of the launch inputs); the revision only when it states one. */
+export function parseBrief(text: string): Brief & { sourceRevision?: string } {
 	const raw = parseStrictObject(text, "brief");
 	const problem = validateSchema(briefSchema, raw);
 	if (problem) throw new Error(`brief: ${problem}`);
@@ -107,8 +113,39 @@ export function parseBrief(text: string): Brief & { sourceRevision: string } {
 		packageName: b.packageName,
 		version: b.version,
 		requirements: typeof b.requirements === "string" ? b.requirements : JSON.stringify(b.requirements),
-		sourceRevision: b.sourceRevision ?? "1",
+		...(b.sourceRevision !== undefined ? { sourceRevision: b.sourceRevision } : {}),
 	};
+}
+
+/**
+ * The identity and the source revision the attempt writes (P0.8): the
+ * brief's, which the launch envelope's component — when the launcher states
+ * one — must repeat exactly: the revision always, the identity when it
+ * names one (a generation names all three members; IDENTITY_MISMATCH
+ * otherwise: the launch's own inputs disagree, and nothing runs). The
+ * revision is the envelope's or the brief's; a launch that states none is
+ * refused rather than given an invented one.
+ */
+export function bindLaunchIdentity(
+	brief: Brief & { sourceRevision?: string },
+	envelope: Envelope,
+): Brief & { sourceRevision: string } {
+	const component = envelope.component;
+	if (component) {
+		const differ: string[] = (["componentId", "puckType", "packageName"] as const).filter(
+			(k) => component[k] !== undefined && component[k] !== brief[k],
+		);
+		if (brief.sourceRevision !== undefined && brief.sourceRevision !== component.sourceRevision)
+			differ.push("sourceRevision");
+		if (differ.length > 0)
+			throw new IdentityMismatchError(
+				`the launch envelope's component and the brief name another ${differ.join(", ")}`,
+			);
+	}
+	const sourceRevision = component?.sourceRevision ?? brief.sourceRevision;
+	if (sourceRevision === undefined)
+		throw new Error("the launch states no source revision: neither the envelope's component nor the brief names one");
+	return { ...brief, sourceRevision };
 }
 
 /**
