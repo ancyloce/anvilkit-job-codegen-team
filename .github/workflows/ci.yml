@@ -42,6 +42,9 @@ jobs:
           node-version: "24.19.0"
       - run: npm install -g pnpm@12.3.4
       - run: pnpm install --frozen-lockfile
+      # No install script runs (pnpm-workspace.yaml): better-sqlite3's addon
+      # is built from its locked sources against this Node's headers.
+      - run: sh tools/build-better-sqlite3.sh
       - run: pnpm run check-types
       - run: pnpm run lint
       - run: pnpm run build
@@ -53,6 +56,15 @@ jobs:
           pnpm run build
           pnpm exec playwright install --with-deps chromium-headless-shell
       - run: pnpm run test
+        env:
+          ANVILKIT_CODEGEN_TEAM_CONTRACTS_DIR: ${{ github.workspace }}/.ci/contracts
+          ANVILKIT_VALIDATOR_PACKAGE: ${{ github.workspace }}/.ci/validator
+          ANVILKIT_REQUIRE_VALIDATOR: "1"
+      # The root tests: the repair round's coder and the validator's steps as
+      # UID 10001 (the real UID split; ANVILKIT_REQUIRE_ROOT_TESTS turns a
+      # skip into a failure).
+      - name: tests as root (the coder and the validator's steps as UID 10001)
+        run: sudo --preserve-env=ANVILKIT_CODEGEN_TEAM_CONTRACTS_DIR,ANVILKIT_VALIDATOR_PACKAGE,ANVILKIT_REQUIRE_VALIDATOR env "PATH=$PATH" ANVILKIT_REQUIRE_ROOT_TESTS=1 pnpm exec vitest run test/prior.test.ts test/validation.test.ts -t root
         env:
           ANVILKIT_CODEGEN_TEAM_CONTRACTS_DIR: ${{ github.workspace }}/.ci/contracts
           ANVILKIT_VALIDATOR_PACKAGE: ${{ github.workspace }}/.ci/validator
