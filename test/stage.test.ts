@@ -221,7 +221,7 @@ describe("StageStore", () => {
 		});
 		const dir = s.dir;
 		const keep = mkdtempSync(path.join(root, "keep-"));
-		for (const f of [
+		const objects = [
 			"checkpoints.sqlite",
 			"session.jsonl",
 			"source.tar",
@@ -229,19 +229,19 @@ describe("StageStore", () => {
 			"evidence.json",
 			"manifest.json",
 			"result-manifest.json",
-		])
-			copyFileSync(path.join(dir, f), path.join(keep, f));
+		];
+		for (const f of objects) copyFileSync(path.join(dir, f), path.join(keep, f));
+		// The sealed objects are read-only (0400) to their owner too: a caller other than root (whose DAC
+		// override writes them in place) alters or restores one by replacing the file in the stage directory.
+		const replace = (f: string, bytes: string | Buffer) => {
+			rmSync(path.join(dir, f), { force: true });
+			writeFileSync(path.join(dir, f), bytes);
+		};
 		const restore = () => {
-			for (const f of [
-				"checkpoints.sqlite",
-				"session.jsonl",
-				"source.tar",
-				"stage.tar",
-				"evidence.json",
-				"manifest.json",
-				"result-manifest.json",
-			])
+			for (const f of objects) {
+				rmSync(path.join(dir, f), { force: true });
 				copyFileSync(path.join(keep, f), path.join(dir, f));
+			}
 		};
 		const expectRefusal = async (what: string, pattern: RegExp) => {
 			await expect(s.recover(scope()), what).rejects.toThrow(pattern);
@@ -260,17 +260,17 @@ describe("StageStore", () => {
 		unlinkSync(path.join(dir, "source.tar"));
 		await expectRefusal("missing source", /local object source.tar is missing/);
 		// altered object (a different session sealed beside the same checkpoint: a mixed pair)
-		writeFileSync(path.join(dir, "session.jsonl"), "{}\n");
+		replace("session.jsonl", "{}\n");
 		await expectRefusal("mixed session", /sealed session is not the one the stage manifest binds/);
 		// a checkpoint snapshot from another run
-		writeFileSync(path.join(dir, "checkpoints.sqlite"), Buffer.from("not the snapshot"));
+		replace("checkpoints.sqlite", Buffer.from("not the snapshot"));
 		await expectRefusal("mixed checkpoint", /checkpoint snapshot is not the one/);
 		// an altered evidence object (the digest no longer matches the bound artifact)
-		writeFileSync(path.join(dir, "evidence.json"), "{}");
+		replace("evidence.json", "{}");
 		await expectRefusal("altered evidence", /does not hash to the bound artifact/);
 		// a result manifest that is not the accepted one
-		writeFileSync(
-			path.join(dir, "result-manifest.json"),
+		replace(
+			"result-manifest.json",
 			readFileSync(path.join(dir, "result-manifest.json")).toString().replace("certified", "repairable"),
 		);
 		await expectRefusal("other result", /is not the accepted one/);
@@ -282,7 +282,7 @@ describe("StageStore", () => {
 			["budget", { budget: { ...(original.budget as object), total: { calls: 99, exposure: "1" } } }],
 			["counters", { counters: { rounds: 0, reviewRounds: 0, repairs: 0 } }],
 		] as Array<[string, Record<string, unknown>]>) {
-			writeFileSync(path.join(dir, "manifest.json"), JSON.stringify({ ...original, ...patch }, null, 2));
+			replace("manifest.json", JSON.stringify({ ...original, ...patch }, null, 2));
 			await expectRefusal(`altered manifest ${what}`, /manifest .*is not the one the accepted stage archive holds/);
 		}
 		// a stage sealed under another team profile

@@ -1,5 +1,15 @@
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -284,6 +294,22 @@ console.log(JSON.stringify(out));
 	});
 });
 
+/**
+ * Removes a scratch tree that holds validator runs. The chain stages the
+ * source it builds read-only (0555 directories) in the run directory; root
+ * removes that as it is, by its DAC override, while the caller identity,
+ * which owns the tree, first makes its directories writable again (links
+ * are not followed).
+ */
+function removeRunTree(dir: string): void {
+	const writable = (d: string): void => {
+		chmodSync(d, 0o700);
+		for (const e of readdirSync(d, { withFileTypes: true })) if (e.isDirectory()) writable(path.join(d, e.name));
+	};
+	if (existsSync(dir)) writable(dir);
+	rmSync(dir, { recursive: true, force: true });
+}
+
 describe.skipIf(!available)("independent validation through the validator's chain", () => {
 	let root: string;
 	let config: ValidatorConfig;
@@ -304,7 +330,7 @@ describe.skipIf(!available)("independent validation through the validator's chai
 		};
 	});
 	afterEach(() => {
-		rmSync(root, { recursive: true, force: true });
+		removeRunTree(root);
 	});
 
 	it("the sealed fixed Hero source is certified by the validator, bound to the sealed manifest digest", async () => {
