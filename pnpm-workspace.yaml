@@ -19,3 +19,11 @@ allowBuilds:
   '@google/genai': false
   esbuild: false
   protobufjs: false
+# better-sqlite3 13 (node-addon-api, the stable N-API ABI) replaces 12 for the
+# checkpointer too (@langchain/langgraph-checkpoint-sqlite 1.0.4 asks for
+# ^12.10.0): 12's ObjectWrap addon built against Node 24.19's headers registers
+# environment cleanup hooks that abort the process when a statement is
+# collected without a current Node context (nodejs/node#63923, not yet fixed
+# in a v24 release) — intermittently in the coordinator and the tests.
+overrides:
+  better-sqlite3: 13.0.3
