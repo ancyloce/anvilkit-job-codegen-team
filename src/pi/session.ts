@@ -5,7 +5,10 @@
 // module-level fallback is replaced by a refusal). The session is the same
 // on a new session, a reload and after compaction because the loader
 // returns the same fixed content every time and never reads the candidate
-// workspace.
+// workspace. Pi's agent directory is the image's root-owned one
+// (environment.ts), never the source directory or the candidate's HOME:
+// nothing Pi reads or runs from there is candidate-writable.
+import "./environment.js";
 import { type StreamFn, setDefaultStreamFn } from "@earendil-works/pi-agent-core";
 import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
 import {
@@ -17,6 +20,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { type ControlledModel, controlledApi } from "../port/pi.js";
 import type { Tool } from "./boundary.js";
+import { piAgentDir } from "./environment.js";
 import { FixedResourceLoader } from "./resources.js";
 
 /**
@@ -113,7 +117,10 @@ export async function createCoderSession(o: CoderSessionOptions): Promise<AgentS
 			: SessionManager.create(o.cwd, o.session.dir);
 	const { session } = await createAgentSession({
 		cwd: o.cwd,
-		agentDir: o.cwd,
+		// Every agent-directory path the SDK would derive (auth, models,
+		// settings, sessions, resources) is replaced above; the one it still
+		// names is the image's root-owned directory, never the workspace.
+		agentDir: piAgentDir,
 		modelRuntime,
 		model: o.model,
 		thinkingLevel: "off",

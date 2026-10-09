@@ -3,6 +3,9 @@
 // tool digests are theirs — with every file operation proven to stay under
 // the source directory, as a string and on disk (no link leads out, no
 // glob pattern reaches out), on a new session, a reload and a tool rebuild.
+// The SDK's grep runs ripgrep from the image's root-owned Pi agent
+// directory, offline (environment.ts, pinned before the SDK loads).
+import "./environment.js";
 import { type Dirent, realpathSync } from "node:fs";
 import { access, glob, mkdir, readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
