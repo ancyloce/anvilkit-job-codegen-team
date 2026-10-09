@@ -4,51 +4,23 @@
 // and the parent's integration suite). What the attempt must never do is
 // seal or submit after a final refusal, a protocol violation or the
 // launch's cancellation, or certify without an independent validator.
-import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createInterface } from "node:readline";
-import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { sha256 } from "../src/digest.js";
-import { encodeResult, type TeamResult } from "../src/protocol.js";
+import { encodeResult } from "../src/protocol.js";
+import { tarMembers } from "../src/stage/archive.js";
 import { FakeSidecar } from "./doubles.js";
-import { heroBrief, localRunner, teamScript } from "./helpers.js";
-
-const here = path.dirname(fileURLToPath(import.meta.url));
-const pkg = path.resolve(here, "..");
-
-const teamYaml = `
-schemaVersion: 1
-route: { id: controlled-openai-v1, contextWindow: 128000, maxTokens: 4096, exposurePerSend: "20000" }
-currency: USD
-parallelism: 2
-recursionLimit: 64
-deadlineMarginSeconds: 5
-roles:
-  planner: { maxCalls: 2, maxOutputTokens: 2048 }
-  retrieval: { maxCalls: 2, maxOutputTokens: 1024 }
-  coder: { maxCalls: 30, maxOutputTokens: 4096 }
-  code_reviewer: { maxCalls: 2, maxOutputTokens: 2048 }
-  security_reviewer: { maxCalls: 2, maxOutputTokens: 2048 }
-aggregate: { maxCalls: 60, exposure: "1200000" }
-reviews: { max: 2 }
-repairs: { max: 2 }
-compaction: { enabled: false, reserveTokens: 16384, keepRecentTokens: 8192 }
-tools: [read, write, edit, ls, grep, find]
-source: { maxFiles: 256, maxFileBytes: 1048576, maxTotalBytes: 16777216, maxSessionBytes: 8388608, maxReviewBytes: 262144 }
-validation: { mode: none }
-`;
-
-type Supervisor = (req: Record<string, unknown>, ctx: { kill: () => void }) => Promise<unknown | undefined>;
-
-interface Run {
-	code: number | null;
-	result: TeamResult;
-	requests: Array<Record<string, unknown>>;
-	log: string;
-}
+import {
+	type CoordinatorLaunch,
+	type CoordinatorRun,
+	candidateEnded,
+	heroBrief,
+	localRunner,
+	runCoordinator,
+	type SupervisorDouble,
+	teamScript,
+} from "./helpers.js";
 
 describe("coordinator", () => {
 	let sidecar: FakeSidecar;
@@ -64,76 +36,11 @@ describe("coordinator", () => {
 		rmSync(root, { recursive: true, force: true });
 	});
 
-	function run(supervisor: Supervisor): Promise<Run> {
-		const workspace = path.join(root, "workspace");
-		const verdict = path.join(root, "verdict");
-		const agent = path.join(root, "agent");
-		const input = path.join(workspace, "input");
-		for (const d of [workspace, verdict, input, path.join(agent, "team", "prompts")]) mkdirSync(d, { recursive: true });
-		for (const f of [
-			"tools.json",
-			...["planner", "retrieval", "coder", "code_reviewer", "security_reviewer"].map((r) => `prompts/${r}.md`),
-		])
-			writeFileSync(path.join(agent, "team", f), readFileSync(path.join(pkg, "agent", "team", f)));
-		const config = path.join(root, "team.yaml");
-		writeFileSync(config, teamYaml);
-		const brief = Buffer.from(JSON.stringify({ schemaVersion: 1, ...heroBrief }));
-		writeFileSync(path.join(input, "brief"), brief);
-		const scope = sidecar.scope as Record<string, string>;
-		const envelope = {
-			schemaVersion: 1,
-			launchId: "launch_team",
-			launchKey: scope.launchKey,
-			operationId: scope.operationId,
-			attemptId: scope.attemptId,
-			profileId: scope.profileId,
-			profileRevision: "2",
-			jobKind: "codegen",
-			executionEpoch: scope.executionEpoch,
-			launchEpoch: "1",
-			deadline: new Date(Date.now() + 10 * 60_000).toISOString().replace(/\.\d{3}Z$/, "Z"),
-			inputs: [{ name: "brief", digest: sha256(brief) }],
-		};
-		const dist = path.join(pkg, "dist", "coordinator.js");
-		const argv = existsSync(dist) ? [dist] : ["--import", "tsx", path.join(pkg, "src", "coordinator.ts")];
-		const child = spawn(process.execPath, argv, {
-			env: {
-				PATH: process.env.PATH ?? "",
-				HOME: verdict,
-				ANVILKIT_TEAM_CONFIG: config,
-				ANVILKIT_AGENT_DIR: agent,
-				ANVILKIT_WORKSPACE: workspace,
-				ANVILKIT_VERDICT_DIR: verdict,
-				ANVILKIT_INPUT_DIR: input,
-				ANVILKIT_TRUSTED_SOCKET: sidecar.trustedSocket,
-				ANVILKIT_CANDIDATE_SOCKET: sidecar.candidateSocket,
-				ANVILKIT_LAUNCH_ENVELOPE: JSON.stringify(envelope),
-				ANVILKIT_OBSERVER_IDENTITY: "anvilkit-codegen-team",
-				...(process.env.ANVILKIT_CODEGEN_TEAM_CONTRACTS_DIR
-					? { ANVILKIT_CODEGEN_TEAM_CONTRACTS_DIR: process.env.ANVILKIT_CODEGEN_TEAM_CONTRACTS_DIR }
-					: {}),
-			},
-			stdio: ["pipe", "pipe", "pipe"],
-		});
-		let log = "";
-		child.stderr.on("data", (c: Buffer) => {
-			log += c.toString();
-		});
-		const requests: Array<Record<string, unknown>> = [];
-		const kill = () => child.kill("SIGTERM");
-		createInterface({ input: child.stdout }).on("line", async (line) => {
-			const req = JSON.parse(line) as Record<string, unknown>;
-			requests.push(req);
-			const answer = await supervisor(req, { kill });
-			if (answer !== undefined && child.stdin.writable)
-				child.stdin.write(`${typeof answer === "string" ? answer : JSON.stringify(answer)}\n`);
-		});
-		return new Promise((resolve) => {
-			child.on("exit", (code) => {
-				const result = JSON.parse(readFileSync(path.join(verdict, "team", "result.json"), "utf8")) as TeamResult;
-				resolve({ code, result, requests, log });
-			});
-		});
+	function run(
+		supervisor: SupervisorDouble,
+		launch: Partial<Omit<CoordinatorLaunch, "sidecar" | "root" | "supervisor">> = {},
+	): Promise<CoordinatorRun> {
+		return runCoordinator({ sidecar, root, supervisor, ...launch });
 	}
 
 	const refused = (req: Record<string, unknown>, code: string) => ({
@@ -181,20 +88,9 @@ describe("coordinator", () => {
 
 	it("without an independent validator the run is never certified and never repaired; its stage records that", async () => {
 		const coder = localRunner();
-		const r = await run(async (req) => {
-			const report = await coder.run({ round: req.round as number, roundDir: req.roundDir as string });
-			return {
-				type: "candidate-ended",
-				protocolVersion: 1,
-				requestId: req.requestId,
-				round: req.round,
-				stop: report.stop,
-				exit: report.exit,
-				descendantsStopped: 0,
-				startedAt: report.startedAt,
-				endedAt: report.endedAt,
-			};
-		});
+		const r = await run(async (req) =>
+			candidateEnded(req, await coder.run({ round: req.round as number, roundDir: req.roundDir as string })),
+		);
 		expect(r.code, r.log).toBe(0);
 		expect(r.result).toMatchObject({
 			verdict: "infrastructure_failed",
@@ -206,5 +102,59 @@ describe("coordinator", () => {
 		// One accepted stage (the repeated submission reentered it), never a certified one.
 		expect(sidecar.results.map((x) => x.verdict)).toEqual(["infrastructure_failed"]);
 		expect(sidecar.accepted?.verdict).toBe("infrastructure_failed");
+	});
+
+	it("a launch whose envelope names another identity than the brief runs nothing and fails IDENTITY_MISMATCH", async () => {
+		const r = await run(async () => undefined, {
+			component: {
+				componentId: heroBrief.componentId,
+				puckType: "Banner",
+				packageName: heroBrief.packageName,
+				sourceRevision: "1",
+			},
+		});
+		expect(r.code).toBe(1);
+		expect(() => encodeResult(r.result)).not.toThrow();
+		expect(r.result).toMatchObject({
+			verdict: "infrastructure_failed",
+			failureCode: "IDENTITY_MISMATCH",
+			outcome: { kind: "infrastructure_failed", failureCode: "IDENTITY_MISMATCH" },
+		});
+		expect(r.result.error).toMatch(/puckType/);
+		expect(r.requests).toHaveLength(0);
+		expect(sidecar.requests).toHaveLength(0);
+		expect(sidecar.results).toHaveLength(0);
+	});
+
+	it("the source revision is the launch's: the envelope's component binds it, and a launch that states none runs nothing", async () => {
+		const { schemaVersion, componentId, puckType, packageName, version, requirements } = {
+			schemaVersion: 1,
+			...heroBrief,
+		};
+		const unrevised = { schemaVersion, componentId, puckType, packageName, version, requirements };
+		const none = await run(async () => undefined, { brief: unrevised });
+		expect(none.code).toBe(1);
+		expect(none.result.error).toMatch(/no source revision/);
+		expect(none.requests).toHaveLength(0);
+		// The brief at revision 1 and an envelope at revision 7 disagree: refused as a mismatch, not resolved by either.
+		const disagree = await run(async () => undefined, {
+			component: { componentId, puckType, packageName, sourceRevision: "7" },
+		});
+		expect(disagree.result.failureCode).toBe("IDENTITY_MISMATCH");
+		expect(disagree.result.error).toMatch(/sourceRevision/);
+		// The envelope's component alone states the revision the coder writes.
+		const coder = localRunner();
+		const bound = await run(
+			async (req) =>
+				candidateEnded(req, await coder.run({ round: req.round as number, roundDir: req.roundDir as string })),
+			{ brief: unrevised, component: { componentId, puckType, packageName, sourceRevision: "7" } },
+		);
+		expect(bound.code, bound.log).toBe(0);
+		const coderCall = sidecar.requests.find((q) => q.callId.includes(":coder:"));
+		expect(coderCall?.messages.at(-1)?.content).toContain("Implement source revision 7");
+		expect(sidecar.results.at(-1)?.verdict).toBe("infrastructure_failed");
+		const stage = sidecar.transfers.find((t) => t.class === "stage");
+		const manifest = JSON.parse(String((await tarMembers(stage?.body ?? Buffer.alloc(0))).get("manifest.json")));
+		expect(manifest.source).toMatchObject({ round: 1, revision: "7" });
 	});
 });

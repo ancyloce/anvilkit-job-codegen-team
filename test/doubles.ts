@@ -63,6 +63,8 @@ export class FakeSidecar {
 		manifest: Record<string, unknown>;
 	}> = [];
 	accepted: AcceptedStage | undefined;
+	/** Accepted stages of earlier attempts of the operation (GET /v1/stages/<attemptId>: a repair launch's prior boundary). */
+	readonly priorStages = new Map<string, AcceptedStage>();
 	inFlight = 0;
 	peakInFlight = 0;
 	scope: Record<string, unknown> = {
@@ -86,8 +88,9 @@ export class FakeSidecar {
 	/** Refuse everything on the trusted socket with this code (STALE_EXECUTION etc.) when set. */
 	trustedRefusal: { status: number; code: string } | undefined;
 
-	constructor(name = "fake-sidecar") {
-		this.dir = path.join(tmpdir(), `${name}-${process.pid}-${Math.random().toString(16).slice(2, 8)}`);
+	/** base: where the socket directory goes (a world-traversable one when a UID 10001 coder connects). */
+	constructor(name = "fake-sidecar", base = tmpdir()) {
+		this.dir = path.join(base, `${name}-${process.pid}-${Math.random().toString(16).slice(2, 8)}`);
 		mkdirSync(this.dir, { recursive: true });
 		this.trustedSocket = path.join(this.dir, "trusted.sock");
 		this.candidateSocket = path.join(this.dir, "candidate.sock");
@@ -243,6 +246,11 @@ export class FakeSidecar {
 			if (req.method === "GET" && url === "/v1/results") {
 				if (!this.accepted) return this.json(res, 404, { code: "NOT_FOUND" });
 				return this.json(res, 200, this.accepted);
+			}
+			if (req.method === "GET" && url.startsWith("/v1/stages/")) {
+				const prior = this.priorStages.get(url.slice("/v1/stages/".length));
+				if (!prior) return this.json(res, 404, { code: "NOT_FOUND" });
+				return this.json(res, 200, prior);
 			}
 			return this.json(res, 403, { code: "ROUTE_FORBIDDEN" });
 		});

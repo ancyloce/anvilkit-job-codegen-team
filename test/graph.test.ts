@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,6 +10,7 @@ import { zeroBudget } from "../src/budget.js";
 import { parseTeamConfig, type TeamConfig, teamBudget } from "../src/config.js";
 import { CodingExecutor, type ExecutorConfig, type RoundResult } from "../src/executor.js";
 import { BudgetExhaustedError, ControlledModelPort, DeadlineExceededError } from "../src/port/model.js";
+import { readTree } from "../src/source.js";
 import { verdictFor } from "../src/stage/manifest.js";
 import type { TeamDeps } from "../src/team/context.js";
 import { buildTeamGraph, graphConfig } from "../src/team/graph.js";
@@ -18,7 +19,7 @@ import { loadPrompts, type RetrievalPort, SpecialistOutputError } from "../src/t
 import type { TeamOutcome, TeamStateType } from "../src/team/state.js";
 import type { ValidationInput, ValidationPort, ValidationResult } from "../src/validation.js";
 import { FakeSidecar } from "./doubles.js";
-import { heroBrief, localRunner, roleOf, teamScript } from "./helpers.js";
+import { heroBrief, heroCoder, heroFixture, heroIdentity, localRunner, roleOf, teamScript } from "./helpers.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const agentDir = path.resolve(here, "..", "agent");
@@ -275,6 +276,47 @@ describe("TeamRunner", () => {
 		}
 	});
 
+	it("a sealed source declaring another identity than the brief is invalid (IDENTITY_MISMATCH) before the validator sees it, never repaired", async () => {
+		const tree = readTree(heroFixture, { maxFiles: 100, maxFileBytes: 1 << 20, maxTotalBytes: 8 << 20 });
+		const declaring = (file: string, member: string, value: string) => {
+			const t = new Map(tree);
+			const doc = JSON.parse(String(t.get(file)));
+			t.set(file, Buffer.from(JSON.stringify({ ...doc, [member]: value }, null, 2)));
+			return t;
+		};
+		const cases = [
+			["another type", declaring("component.json", "puckType", "Banner"), true],
+			["another component", declaring("component.json", "componentId", "cmp_other"), true],
+			["another package", declaring("package.json", "name", "@acme/other"), true],
+			["the allocated identity", tree, false],
+		] as const;
+		for (const [i, [what, files, mismatch]] of cases.entries()) {
+			const ws = mkdtempSync(path.join(tmpdir(), "team-ws-"));
+			const validation = new ScriptedValidation([certified()]);
+			const attempt = `att_identity_${i}`;
+			const d = deps({ validation }, config, attempt, { workspace: ws, sealDir: path.join(ws, "seal") });
+			sidecar.script = teamScript({ coder: heroCoder(files) });
+			const final = (await buildTeamGraph(d, new MemorySaver()).invoke(
+				{ brief: heroBrief, sourceRevision: "1" },
+				graphConfig(config, attempt),
+			)) as TeamStateType;
+			if (mismatch) {
+				expect(validation.inputs, what).toHaveLength(0);
+				expect(final.outcome, what).toMatchObject({ kind: "invalid", failureCode: "IDENTITY_MISMATCH" });
+				expect(final.repairs, what).toBe(0);
+				expect(verdictFor(final.outcome as TeamOutcome)).toEqual({
+					verdict: "invalid",
+					failureCode: "IDENTITY_MISMATCH",
+				});
+			} else {
+				expect(validation.inputs[0]?.identity).toEqual(heroIdentity);
+				expect(validation.inputs[0]?.sourceRevision).toBe("1");
+				expect(final.outcome?.kind).toBe("certified");
+			}
+			rmSync(ws, { recursive: true, force: true });
+		}
+	});
+
 	it("a specialist answer outside its schema is asked again within the role budget; an invented citation is refused", async () => {
 		let plannerCalls = 0;
 		const evidence: RetrievalPort = {
@@ -371,6 +413,11 @@ describe("TeamRunner", () => {
 			),
 		).rejects.toBeInstanceOf(DeadlineExceededError);
 		expect(() => parseTeamConfig(teamYaml.replace("repairs: { max: 1 }\n", ""))).toThrow(/repairs/);
+		// The reviewed team.yaml: the validator's steps under the candidate identity and its SSR harness under its own.
+		const reviewed = readFileSync(path.join(here, "..", "team.yaml"), "utf8");
+		expect(parseTeamConfig(reviewed).validation.validator).toMatchObject({ uid: 10001, harnessUid: 10003 });
+		expect(() => parseTeamConfig(reviewed.replace("    harnessUid: 10003\n", ""))).toThrow(/harness uid/);
+		expect(() => parseTeamConfig(reviewed.replace("harnessUid: 10003", "harnessUid: 10001"))).toThrow(/harness uid/);
 		expect(() => parseTeamConfig(teamYaml.replace("parallelism: 2", "parallelism: 1"))).toThrow(/parallelism/);
 		expect(() => parseTeamConfig(teamYaml.replace(', exposurePerSend: "20000"', ""))).toThrow(/exposurePerSend/);
 		expect(() =>
