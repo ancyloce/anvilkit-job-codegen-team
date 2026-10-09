@@ -8,8 +8,11 @@
 // transport. It discovers nothing: no AGENTS.md, .pi, SYSTEM.md, extension,
 // skill or settings file of the workspace is loaded, on a new session, a
 // continued one or after compaction. Everything it writes is data for the
-// trusted side; its exit code certifies nothing.
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+// trusted side; its exit code certifies nothing. Pi's tool environment is
+// pinned before any Pi module loads (pi/environment.ts: offline, the
+// image's root-owned agent directory), so the first import stays first.
+import "./pi/environment.js";
+import { copyFileSync, cpSync, lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { SidecarClient } from "./adapters/sidecar.js";
 import { type Allowance, moneyAmount } from "./budget.js";
@@ -33,6 +36,24 @@ export const roundOutcomeFile = "outcome.json";
 
 /** Runs one round; returns the outcome written for the trusted side. */
 export async function runRound(input: RoundInput, outcomeDir: string): Promise<RoundOutcome> {
+	// A repair launch's first round repairs the prior attempt's proven
+	// source: the trusted prior tree is read-only to this identity, so the
+	// round's source directory is replaced by this identity's own copy of it
+	// (regular files and directories only, as the trusted side unpacked
+	// them) before anything is written.
+	if (input.priorSource) {
+		rmSync(input.sourceDir, { recursive: true, force: true });
+		cpSync(input.priorSource, input.sourceDir, {
+			recursive: true,
+			errorOnExist: true,
+			force: false,
+			verbatimSymlinks: true,
+			filter: (src) => {
+				const st = lstatSync(src);
+				return st.isDirectory() || st.isFile();
+			},
+		});
+	}
 	mkdirSync(input.sourceDir, { recursive: true });
 	mkdirSync(input.sessionDir, { recursive: true });
 	// The tools are bound to the source directory as a real directory under

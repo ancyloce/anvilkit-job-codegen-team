@@ -90,6 +90,8 @@ export interface RoundSpec {
 	prompt: string;
 	sourceRevision: string;
 	continueFrom?: RoundResult;
+	/** The prior tree a repair launch's first round starts from (never with continueFrom). */
+	priorSource?: string;
 	remaining: Allowance;
 }
 
@@ -171,6 +173,7 @@ export class CodingExecutor {
 			socket: c.candidateSocket,
 		};
 		if (continueSession) input.continueSession = continueSession;
+		if (spec.priorSource) input.priorSource = spec.priorSource;
 		return input;
 	}
 
@@ -178,6 +181,10 @@ export class CodingExecutor {
 		if (this.inFlight) throw new SourceWriterConflictError();
 		if (this.rounds.some((r) => r.round === spec.round)) throw new Error(`round ${spec.round} already ran`);
 		if (spec.remaining.calls < 1) throw new Error(`round ${spec.round}: no coder call left in the allowance`);
+		if (spec.priorSource && spec.continueFrom)
+			throw new Error(
+				`round ${spec.round}: a round continues the round before it or starts from the prior tree, not both`,
+			);
 		this.inFlight = true;
 		try {
 			// The round tree is the trusted side's (the supervisor refuses a
@@ -208,6 +215,9 @@ export class CodingExecutor {
 				writeFileSync(copy, readFileSync(prev.sessionFile), { mode: 0o644 });
 				continueSession = copy;
 			}
+			// The prior tree is the trusted side's proven copy under the
+			// workspace, reached through real directories only.
+			if (spec.priorSource) assertRealBelow(this.config.workspace, spec.priorSource, "prior tree");
 			const input = this.roundInput(spec, continueSession);
 			writeFileSync(path.join(roundDir, roundInputFile), JSON.stringify(input), { mode: 0o644 });
 			const report = await this.runner.run({ round: spec.round, roundDir }, signal);

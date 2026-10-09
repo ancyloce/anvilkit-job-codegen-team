@@ -6,6 +6,7 @@
 // repairable result may send the team back to the coder; nothing the team
 // itself concludes is a certification. The validator's own chain is the
 // adapter in adapters/validator.ts.
+import type { ComponentIdentity } from "./identity.js";
 import type { SealedSource } from "./source.js";
 
 export interface CertificationSummary {
@@ -32,6 +33,8 @@ export interface ValidationInput {
 	sealedDir: string;
 	source: SealedSource;
 	sourceRevision: string;
+	/** The allocated identity the sealed source declares (checked by the coordinator before validation) and a certification binds. */
+	identity: ComponentIdentity;
 }
 
 export interface ValidationPort {

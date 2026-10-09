@@ -25,6 +25,9 @@ export interface ValidatorConfig {
 	identity: "setpriv" | "caller";
 	uid?: number;
 	gid?: number;
+	/** The validator's SSR harness identity (setpriv; the validator's own fixed UID/GID 10003): stopped and confirmed after every run too. */
+	harnessUid?: number;
+	harnessGid?: number;
 	ssr: boolean;
 	browser: boolean;
 	timeoutSeconds: number;
@@ -199,6 +202,8 @@ export const teamConfigSchema: Record<string, unknown> = {
 						identity: { enum: ["setpriv", "caller"] },
 						uid: { type: "integer", minimum: 1 },
 						gid: { type: "integer", minimum: 1 },
+						harnessUid: { type: "integer", minimum: 1 },
+						harnessGid: { type: "integer", minimum: 1 },
 						ssr: { type: "boolean" },
 						browser: { type: "boolean" },
 						timeoutSeconds: { type: "integer", minimum: 10, maximum: 7200 },
@@ -247,6 +252,13 @@ export function parseTeamConfig(text: string): TeamConfig {
 		const v = cfg.validation.validator as ValidatorConfig;
 		if (v.identity === "setpriv" && (v.uid === undefined || v.gid === undefined))
 			throw new Error("team configuration: validation.validator: setpriv needs uid and gid");
+		if (
+			v.identity === "setpriv" &&
+			(v.harnessUid === undefined || v.harnessGid === undefined || v.harnessUid === v.uid)
+		)
+			throw new Error(
+				"team configuration: validation.validator: setpriv needs the harness uid and gid, another uid than the candidate's",
+			);
 	}
 	return {
 		...cfg,

@@ -40,6 +40,13 @@ export interface RoundInput {
 	sessionDir: string;
 	/** The sealed session of the previous round to continue from (copied into sessionDir by the coder). */
 	continueSession?: string;
+	/**
+	 * The trusted side's read-only prior tree (a repair launch's proven
+	 * source of the prior attempt): the coder replaces its own source
+	 * directory with a copy of it before the round, so it writes as the
+	 * candidate identity what it repairs.
+	 */
+	priorSource?: string;
 	socket: string;
 }
 
@@ -141,6 +148,7 @@ export const roundInputSchema: Record<string, unknown> = {
 		sourceDir: { type: "string", minLength: 1 },
 		sessionDir: { type: "string", minLength: 1 },
 		continueSession: { type: "string", minLength: 1 },
+		priorSource: { type: "string", minLength: 1 },
 		socket: { type: "string", minLength: 1 },
 	},
 };
