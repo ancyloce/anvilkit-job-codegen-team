@@ -6,8 +6,12 @@
 // about the candidate — when the round's last call was refused by Control
 // or the sidecar, exceeded the allowance or the deadline before a send, or
 // ended without an established outcome. A Control refusal is never sealed
-// as a defect of the source the round did not finish.
+// as a defect of the source the round did not finish. The first round of a
+// repair launch has no sealed round of this attempt to continue: it starts
+// from the prior tree (the prior attempt's proven source), which the coder
+// copies into its own source directory before it writes.
 
+import path from "node:path";
 import type { RoundResult } from "../../executor.js";
 import { BudgetExhaustedError } from "../../port/model.js";
 import type { NodeContext } from "../context.js";
@@ -28,9 +32,11 @@ export function codeNode(ctx: NodeContext): Node {
 		const revision = isRepair ? (BigInt(state.sourceRevision) + 1n).toString() : state.sourceRevision;
 		let prompt: string;
 		let continueFrom: RoundResult | undefined;
+		let priorSource: string | undefined;
 		if (isRepair) {
 			const last = state.rounds[state.rounds.length - 1] as RoundSummary;
 			continueFrom = deps.roundResults.get(last.round);
+			if (!continueFrom && last.stop === "imported") priorSource = path.join(last.sealedDir, "source");
 			const lastValidation = state.validations.filter((v) => v.round === last.round).at(-1)?.result;
 			const findings = state.reviews.filter((r) => r.round === last.round).flatMap((r) => r.findings);
 			const v =
@@ -56,6 +62,7 @@ export function codeNode(ctx: NodeContext): Node {
 			prompt,
 			sourceRevision: revision,
 			continueFrom,
+			priorSource,
 			remaining,
 		});
 		deps.roundResults.set(round, result);
