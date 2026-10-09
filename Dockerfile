@@ -1,9 +1,10 @@
 # anvilkit-codegen-team: the codegen Job image of the bounded LangGraph/Pi
 # team (delivery.md P12; the profile codegen-team-dev-v1 pins it with
 # "anvilkit-codegen-supervisor team" as its entrypoint). It is the
-# independent validator's image (anvilkit-job-validator: Debian, the pinned
-# Node, pnpm, setpriv, the validator's locked toolchain and Chromium headless
-# shell, its contract schemas, the candidate UID), named by digest, with the
+# independent validator's image (anvilkit-job-validator: Debian 13, the
+# pinned Node without npm, npx, corepack, yarn or pnpm, setpriv, the
+# validator's locked toolchain and Chromium headless shell, its contract
+# schemas, the candidate and harness UIDs), named by digest, with the
 # trusted supervisor of anvilkit-job-codegen-supervisor and this repository's
 # team package (the trusted coordinator and the Pi coder with their locked
 # install) added.
@@ -31,10 +32,20 @@ COPY --from=supervisor internal ./internal
 RUN go build -trimpath -ldflags="-s -w" -o /out/anvilkit-codegen-supervisor ./cmd/anvilkit-codegen-supervisor \
  && go build -trimpath -ldflags="-s -w" -o /out/anvilkit-codegen-candidate ./cmd/anvilkit-codegen-candidate
 
-# The team package: its locked install (better-sqlite3's prebuilt binary is
-# the one lifecycle script the workspace file allows) and the compiled
-# entrypoints; the reviewed tools document is checked against this build.
-FROM node:24.19.0-bookworm-slim@sha256:a9f5f7c91a432850b2a8a7797adf5eadb6c733ceed61167806cee7ea7fbc29df AS team-build
+# The team package: its locked install with no lifecycle script run (the
+# workspace file denies them all), better-sqlite3's native addon built here
+# from the locked package's own sources against this pinned Node's headers
+# (tools/build-better-sqlite3.sh: npm's bundled node-gyp, --nodedir, no
+# prebuilt binary fetched; the toolchain is Debian trixie's from the signed
+# archive of the pinned base — the validator's runtime base, so the addon
+# links against the glibc it runs on), and the compiled entrypoints; the
+# reviewed tools document is checked against this build and the addon is
+# loaded once more after the production prune. npm (the base image's) and
+# pnpm exist in this stage only.
+FROM node:24.19.0-trixie-slim@sha256:ab3eebe934147fee049b5eb83c570f68c849a13c930bdfa482de99fcdfa3b3de AS team-build
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends python3 make g++ \
+ && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 RUN npm install -g pnpm@12.3.4
 # Network resilience only: a longer per-request timeout and more retries so a
@@ -42,14 +53,33 @@ RUN npm install -g pnpm@12.3.4
 # frozen lockfile and the exact resolved versions are unchanged.
 ENV npm_config_fetch_timeout=600000 npm_config_fetch_retries=6 npm_config_fetch_retry_maxtimeout=600000
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json tsconfig.build.json ./
-RUN pnpm install --frozen-lockfile
+COPY tools/build-better-sqlite3.sh ./tools/build-better-sqlite3.sh
+RUN pnpm install --frozen-lockfile \
+ && sh tools/build-better-sqlite3.sh
 COPY src ./src
 COPY agent /agent
 RUN pnpm run build \
  && node dist/tools.js --check /agent/team/tools.json \
- && pnpm install --frozen-lockfile --prod
+ && pnpm install --frozen-lockfile --prod \
+ && node -e 'const Database = require("better-sqlite3"); new Database(":memory:").close()'
 
-FROM ${VALIDATOR_REPOSITORY}@sha256:2e21d74764e312c6b69598e2f7ca236c8ae8509486edff8eb1a165cecaca80d2
+FROM ${VALIDATOR_REPOSITORY}@sha256:c1eb94768b1d2b32177a940b09cb92b3d55773ae941d678cea16bee8b323d1ec
+# Pi's grep tool runs ripgrep. It is Debian trixie's package at an exact
+# version (from the signed archive), and the root-owned Pi agent directory's
+# bin/rg names it: the SDK's tools manager looks in <agent dir>/bin first,
+# then on PATH, and downloads the latest release into that bin directory
+# when neither has one and PI_OFFLINE is unset. The coder pins
+# PI_OFFLINE=1 and PI_CODING_AGENT_DIR=/opt/pi-agent itself before Pi loads
+# (src/pi/environment.ts), because the supervisor hands the candidate a
+# fixed environment; the same values are set here for every other process.
+# Nothing in /opt/pi-agent is writable by the candidate, and its HOME's
+# .pi/agent/bin is never consulted.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ripgrep=14.1.1-1+b4 \
+ && rm -rf /var/lib/apt/lists/* \
+ && install -d -o 0 -g 0 -m 0755 /opt/pi-agent /opt/pi-agent/bin \
+ && ln -s /usr/bin/rg /opt/pi-agent/bin/rg
+ENV PI_OFFLINE=1 PI_CODING_AGENT_DIR=/opt/pi-agent
 COPY --from=supervisor-build /out/anvilkit-codegen-supervisor /out/anvilkit-codegen-candidate /usr/local/bin/
 COPY --from=team-build /src/node_modules /anvilkit/team/node_modules
 COPY --from=team-build /src/dist /anvilkit/team/dist

@@ -4,15 +4,18 @@
 # the Proxy inspects), LangGraph.js with its SQLite checkpoint saver, and the
 # toolchain of the trusted coordinator.
 packages: []
-# Lifecycle scripts: only better-sqlite3's install script runs (it places the
-# prebuilt native binary of the pinned version; the SqliteSaver of the
-# checkpointer needs it). Every other script is denied on this trusted side:
-# esbuild's postinstall only fetches a platform binary when its optional
-# platform package is absent (it is present); @google/genai (a pi-ai provider
-# path this build never enables) has a no-op preinstall echo; protobufjs (a
-# transitive of the Google provider path) only prints a notice.
+# Lifecycle scripts: none runs on this trusted side. better-sqlite3's install
+# script would fetch a prebuilt native binary from the network at install
+# time (prebuild-install); its addon (the SqliteSaver of the checkpointer
+# needs it) is built from the locked package's own sources by
+# tools/build-better-sqlite3.sh after the install instead — in the image's
+# build stage, in CI and on a development checkout. esbuild's postinstall
+# only fetches a platform binary when its optional platform package is
+# absent (it is present); @google/genai (a pi-ai provider path this build
+# never enables) has a no-op preinstall echo; protobufjs (a transitive of the
+# Google provider path) only prints a notice.
 allowBuilds:
-  better-sqlite3: true
+  better-sqlite3: false
   '@google/genai': false
   esbuild: false
   protobufjs: false

@@ -4,6 +4,7 @@ node_modules
 dist
 test
 tools
+!tools/build-better-sqlite3.sh
 README.md
 Dockerfile
 .dockerignore

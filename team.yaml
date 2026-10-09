@@ -58,7 +58,10 @@ source:
   maxReviewBytes: 262144
 # validation: the independent validator's chain over the sealed source of
 # every round (jobs/validator, the image's copy under /anvilkit/validator),
-# its build, SSR and browser steps under the candidate identity.
+# its build, SSR and browser steps under the candidate identity, its SSR
+# harness under its own (harnessUid/harnessGid: the validator's fixed
+# 10003, used for nothing else in the Pod). After every run the coordinator
+# stops and confirms every process of both identities left in the launch.
 validation:
   mode: validator
   validator:
@@ -67,6 +70,8 @@ validation:
     identity: setpriv
     uid: 10001
     gid: 10001
+    harnessUid: 10003
+    harnessGid: 10003
     ssr: true
     browser: true
     timeoutSeconds: 900
