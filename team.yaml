@@ -20,6 +20,12 @@ route:
   contextWindow: 128000
   maxTokens: 4096
   exposurePerSend: "1000000"
+# knowledge (P2.4): the reviewed retrieval profile the Retrieval specialist
+# searches the brief's knowledge snapshot under, through the sidecar's
+# Knowledge relay (the operation's own scope; Knowledge decides
+# readability and asks Control's commercial authorization). A brief that
+# names no snapshot is searched nowhere.
+knowledge: { retrievalProfileId: hybrid-bge-m3-dev-v1, maxContextItems: 8 }
 # currency and the exposure amounts are Control's Money (scale-6 integer
 # units of the currency, as the P06 prices state them).
 currency: USD

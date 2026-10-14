@@ -1,6 +1,6 @@
 # This directory is its own pnpm workspace root (one package), independent of
 # the parent's workspace globs, as jobs/validator and the Model Proxy are: the
-# lockfile here pins the Pi coding SDK (the same @earendil-works/pi-ai 0.85.1
+# lockfile here pins the Pi coding SDK (the same @earendil-works/pi-ai 1.1.0
 # the Proxy inspects), LangGraph.js with its SQLite checkpoint saver, and the
 # toolchain of the trusted coordinator.
 packages: []
