@@ -12,8 +12,11 @@ import {
 	type AssistantMessageEventStream,
 	type Context,
 	createAssistantMessageEventStream,
+	getCurrentSystemPrompt,
+	getCurrentTools,
 	type Message,
 	type Model,
+	normalizeContext,
 	type Usage as PiUsage,
 	type StopReason,
 	type Tool,
@@ -103,9 +106,14 @@ function textOf(content: Message["content"], what: string): string {
 /** Pi's context as the relay contract's messages. */
 export function contextToRelay(context: Context): RelayMessage[] {
 	const out: RelayMessage[] = [];
-	if (context.systemPrompt) out.push({ role: "system", content: context.systemPrompt });
-	context.messages.forEach((m, i) => {
+	const transcript = normalizeContext(context);
+	const systemPrompt = getCurrentSystemPrompt(transcript.messages);
+	if (systemPrompt) out.push({ role: "system", content: systemPrompt });
+	transcript.messages.forEach((m, i) => {
 		const at = `message ${i}`;
+		// Pi 1.x carries prompt/tool changes in system transcript entries.
+		// They were folded above; only conversation messages follow.
+		if (m.role === "system") return;
 		if (m.role === "user") {
 			out.push({ role: "user", content: textOf(m.content, at) });
 		} else if (m.role === "assistant") {
@@ -210,7 +218,7 @@ async function run(
 				role: o.role,
 				ordinal: o.nextOrdinal(),
 				messages,
-				tools: toolsToRelay(context.tools),
+				tools: toolsToRelay(getCurrentTools(normalizeContext(context).messages)),
 				maxOutputTokens: Math.min(o.maxOutputTokens, model.maxTokens),
 				exposure: o.exposure,
 				remaining: o.remaining(),
@@ -244,11 +252,11 @@ async function run(
 					});
 					textOpen = false;
 				}
-				let args: Record<string, unknown>;
+				let args: ToolCall["arguments"];
 				try {
 					const parsed: unknown = JSON.parse(f.toolCall.arguments ?? "");
 					if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("not an object");
-					args = parsed as Record<string, unknown>;
+					args = parsed as ToolCall["arguments"];
 				} catch {
 					fail("error", `tool call ${f.toolCall.toolCallId}: arguments are not a JSON object`);
 					return;
