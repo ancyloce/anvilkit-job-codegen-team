@@ -2,6 +2,7 @@
 // configuration and budget, the attempt's absolute deadline (never reset),
 // and the per-role call ordinals that keep call identities deterministic
 // across a restart of the same run.
+import type { Money } from "../adapters/sidecar.js";
 import type { TeamBudget } from "../budget.js";
 import { type TeamConfig, teamBudget } from "../config.js";
 import type { CodingExecutor, RoundResult } from "../executor.js";
@@ -21,6 +22,8 @@ export interface TeamDeps {
 	/** The sealed rounds by number (the executor's results, needed to continue a session). */
 	roundResults: Map<number, RoundResult>;
 	log?: (event: string, fields?: Record<string, unknown>) => void;
+	/** The operation's unreserved budget at the start (P2.4): clamps the run's aggregate exposure. */
+	budgetHeadroom?: Money;
 }
 
 export interface NodeContext {
@@ -42,7 +45,7 @@ export function nodeContext(deps: TeamDeps): NodeContext {
 	const past = () => now().getTime() + deps.config.deadlineMarginSeconds * 1000 >= deps.deadline.getTime();
 	return {
 		deps,
-		budget: teamBudget(deps.config),
+		budget: teamBudget(deps.config, deps.budgetHeadroom),
 		now,
 		log: deps.log ?? (() => {}),
 		nextOrdinal(role) {

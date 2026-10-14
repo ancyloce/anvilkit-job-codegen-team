@@ -194,6 +194,8 @@ export interface Brief {
 	packageName: string;
 	version: string;
 	requirements: string;
+	/** P2.4: the knowledge snapshot the Retrieval specialist searches (absent: none). */
+	knowledgeSnapshotId?: string;
 }
 
 export function planUser(brief: Brief, sourceRevision: string): string {
