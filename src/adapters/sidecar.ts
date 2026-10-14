@@ -91,6 +91,8 @@ export interface Scope {
 	recoveryEpoch: string;
 	launchKey: string;
 	deadline: string;
+	/** P2.4: the operation's unreserved budget as Control read it with the scope; absent when unfunded. */
+	budgetHeadroom?: Money;
 }
 
 export interface Transfer {
