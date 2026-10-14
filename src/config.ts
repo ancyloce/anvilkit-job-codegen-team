@@ -8,7 +8,7 @@
 import { readFileSync } from "node:fs";
 import { parse as parseYaml } from "yaml";
 import type { Money } from "./adapters/sidecar.js";
-import { TeamBudget } from "./budget.js";
+import { type BudgetLimits, preflight, TeamBudget } from "./budget.js";
 import { validateSchema } from "./contracts.js";
 import type { Role } from "./port/model.js";
 
@@ -66,6 +66,8 @@ export interface TeamConfig {
 		maxReviewBytes: number;
 	};
 	validation: { mode: "validator" | "none" } & { validator?: ValidatorConfig };
+	/** P2.4: the reviewed retrieval profile the Retrieval specialist searches under (absent: no retrieval). */
+	knowledge?: { retrievalProfileId: string; maxContextItems: number };
 }
 
 const amount = { type: "string", pattern: "^(0|[1-9][0-9]{0,29})$" };
@@ -100,6 +102,15 @@ export const teamConfigSchema: Record<string, unknown> = {
 	],
 	properties: {
 		schemaVersion: { const: 1 },
+		knowledge: {
+			type: "object",
+			additionalProperties: false,
+			required: ["retrievalProfileId", "maxContextItems"],
+			properties: {
+				retrievalProfileId: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+				maxContextItems: { type: "integer", minimum: 1, maximum: 64 },
+			},
+		},
 		route: {
 			type: "object",
 			additionalProperties: false,
@@ -271,12 +282,24 @@ export function loadTeamConfig(path: string): TeamConfig {
 	return parseTeamConfig(readFileSync(path, "utf8"));
 }
 
-/** The run's budget rules over the configuration's limits. */
-export function teamBudget(config: TeamConfig): TeamBudget {
-	return new TeamBudget({
-		currency: config.currency,
-		exposurePerSend: BigInt(config.route.exposurePerSend.amount),
-		roles: config.roles,
-		aggregate: { maxCalls: config.aggregate.maxCalls, exposure: BigInt(config.aggregate.exposure.amount) },
-	});
+/** The run's budget limits over the configuration, sized by the preflight (P2.4). */
+export function teamBudgetPlan(
+	config: TeamConfig,
+	headroom?: Money,
+): { limits: BudgetLimits; concurrentSends: number } {
+	return preflight(
+		{
+			currency: config.currency,
+			exposurePerSend: BigInt(config.route.exposurePerSend.amount),
+			roles: config.roles,
+			aggregate: { maxCalls: config.aggregate.maxCalls, exposure: BigInt(config.aggregate.exposure.amount) },
+		},
+		config.parallelism,
+		headroom,
+	);
+}
+
+/** The run's budget rules over the configuration's limits and the operation's headroom. */
+export function teamBudget(config: TeamConfig, headroom?: Money): TeamBudget {
+	return new TeamBudget(teamBudgetPlan(config, headroom).limits);
 }

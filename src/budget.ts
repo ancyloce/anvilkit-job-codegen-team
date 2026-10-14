@@ -80,6 +80,35 @@ export interface BudgetLimits {
 	aggregate: { maxCalls: number; exposure: bigint };
 }
 
+/**
+ * The budget preflight of a run (P2.4, TEAM-03): before the first send the
+ * coordinator sizes the run by the operation's unreserved budget as Control
+ * read it with the scope. Every concurrent send holds its full per-send
+ * exposure at Control until it settles, so at most floor(headroom /
+ * perSend) of them can be admitted at once: the port's concurrency is
+ * lowered to that (never below one send at a time), so the reviewers run
+ * one after the other instead of the second being denied mid-review. A
+ * headroom that funds no send at all ends the run before its first send.
+ * The run's own accounting stays the reviewed limits: Control charges the
+ * actual cost and releases the rest of each reservation, so the headroom
+ * at the start is not the run's total. Without a headroom (an unfunded
+ * operation or an older Control) the reviewed limits stand.
+ */
+export function preflight(
+	limits: BudgetLimits,
+	parallelism: number,
+	headroom?: Money,
+): { limits: BudgetLimits; concurrentSends: number } {
+	if (!headroom) return { limits, concurrentSends: parallelism };
+	if (headroom.currency !== limits.currency)
+		throw new Error(`the operation is funded in ${headroom.currency}, the team's route in ${limits.currency}`);
+	const available = moneyAmount(headroom);
+	const affordable = available <= 0n ? 0 : Number(available / limits.exposurePerSend);
+	if (affordable === 0)
+		return { limits: { ...limits, aggregate: { ...limits.aggregate, exposure: 0n } }, concurrentSends: 1 };
+	return { limits, concurrentSends: Math.min(parallelism, affordable) };
+}
+
 /** The budget rules of one run over its reviewed limits. */
 export class TeamBudget {
 	constructor(readonly limits: BudgetLimits) {
