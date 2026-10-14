@@ -91,6 +91,7 @@ const briefSchema: Record<string, unknown> = {
 		sourceRevisions: { type: "array", maxItems: 64 },
 		brandDigests: { type: "array", maxItems: 16 },
 		assetDigests: { type: "array", maxItems: 64 },
+		knowledgeSnapshotId: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
 	},
 };
 
@@ -106,6 +107,7 @@ export function parseBrief(text: string): Brief & { sourceRevision?: string } {
 		version: string;
 		requirements: unknown;
 		sourceRevision?: string;
+		knowledgeSnapshotId?: string;
 	};
 	return {
 		componentId: b.componentId,
@@ -114,6 +116,7 @@ export function parseBrief(text: string): Brief & { sourceRevision?: string } {
 		version: b.version,
 		requirements: typeof b.requirements === "string" ? b.requirements : JSON.stringify(b.requirements),
 		...(b.sourceRevision !== undefined ? { sourceRevision: b.sourceRevision } : {}),
+		...(b.knowledgeSnapshotId !== undefined ? { knowledgeSnapshotId: b.knowledgeSnapshotId } : {}),
 	};
 }
 

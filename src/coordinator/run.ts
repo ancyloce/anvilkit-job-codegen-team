@@ -12,7 +12,8 @@ import { SqliteSaver } from "@langchain/langgraph-checkpoint-sqlite";
 import { SidecarError } from "../adapters/sidecar.js";
 import { SupervisorRunner } from "../adapters/supervisor.js";
 import { ValidatorCli } from "../adapters/validator.js";
-import { teamBudget } from "../config.js";
+import { TeamBudget } from "../budget.js";
+import { teamBudgetPlan } from "../config.js";
 import { sha256 } from "../digest.js";
 import { CandidateRoundRefusedError, CodingExecutor, type RoundResult, trustedDir } from "../executor.js";
 import {
@@ -85,13 +86,23 @@ export async function runTeam(
 	// exist before any candidate runs, so no candidate can plant them.
 	trustedDir(path.join(workspace, "round"));
 	trustedDir(path.join(workspace, "validation"));
-	const budget = teamBudget(config);
+	// P2.4 (TEAM-03): size the run by the operation's unreserved budget
+	// before the first send: concurrent sends the headroom cannot hold are
+	// serialized at the port, and the aggregate never exceeds it.
+	const plan = teamBudgetPlan(config, scope.budgetHeadroom);
+	const budget = new TeamBudget(plan.limits);
+	if (plan.concurrentSends < config.parallelism)
+		log("budget preflight lowered the concurrent sends", {
+			configured: config.parallelism,
+			concurrentSends: plan.concurrentSends,
+			headroom: scope.budgetHeadroom?.amount,
+		});
 	const port = new ControlledModelPort({
 		relay: (r, o) => inputs.sidecar.relay(r, o),
 		routeId: config.route.id,
 		deadline,
 		callIdPrefix: scope.attemptId,
-		maxConcurrent: config.parallelism,
+		maxConcurrent: plan.concurrentSends,
 		deadlineMarginMs: config.deadlineMarginSeconds * 1000,
 		ledgerPath: path.join(teamDir, "calls.jsonl"),
 	});
@@ -143,11 +154,16 @@ export async function runTeam(
 			prompts,
 			port,
 			executor,
-			retrieval: new SidecarRetrieval(inputs.trustedSocket),
+			retrieval: new SidecarRetrieval(inputs.trustedSocket, {
+				snapshotId: start.brief.knowledgeSnapshotId,
+				retrievalProfileId: config.knowledge?.retrievalProfileId,
+				maxContextItems: config.knowledge?.maxContextItems,
+			}),
 			validation,
 			deadline,
 			roundResults,
 			log,
+			budgetHeadroom: scope.budgetHeadroom,
 		},
 		saver,
 	);
