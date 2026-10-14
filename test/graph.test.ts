@@ -7,7 +7,7 @@ import { SqliteSaver } from "@langchain/langgraph-checkpoint-sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type RelayRequest, SidecarClient } from "../src/adapters/sidecar.js";
 import { zeroBudget } from "../src/budget.js";
-import { parseTeamConfig, type TeamConfig, teamBudget } from "../src/config.js";
+import { parseTeamConfig, type TeamConfig, teamBudget, teamBudgetPlan } from "../src/config.js";
 import { CodingExecutor, type ExecutorConfig, type RoundResult } from "../src/executor.js";
 import { BudgetExhaustedError, ControlledModelPort, DeadlineExceededError } from "../src/port/model.js";
 import { readTree } from "../src/source.js";
@@ -189,6 +189,33 @@ describe("TeamRunner", () => {
 		expect(d.port.peakConcurrency).toBe(2);
 		expect(sidecar.requests.find((q) => roleOf(q) === "planner")?.callId).toBe("att_team:planner:1");
 		expect(sidecar.requests.find((q) => roleOf(q) === "code_reviewer")?.callId).toBe("att_team:code_reviewer:1");
+	});
+
+	it("P2.4 (TEAM-03): a headroom that holds one send at a time runs both reviewers one after the other and certifies", async () => {
+		// 1.5 sends of headroom at the 20000 per-send exposure: the preflight lowers the port to one send at a time.
+		const headroom = { currency: "USD", amount: "30000" };
+		const plan = teamBudgetPlan(config, headroom);
+		expect(plan.concurrentSends).toBe(1);
+		const base = deps({ validation: new ScriptedValidation([certified()]) }, config, "att_serial");
+		const client = new SidecarClient(sidecar.trustedSocket);
+		const d: TeamDeps = {
+			...base,
+			budgetHeadroom: headroom,
+			port: new ControlledModelPort({
+				relay: (r, o) => client.relay(r, o),
+				routeId: config.route.id,
+				deadline: attemptDeadline,
+				callIdPrefix: "att_serial",
+				maxConcurrent: plan.concurrentSends,
+			}),
+		};
+		const final = (await buildTeamGraph(d, new MemorySaver()).invoke(
+			{ brief: heroBrief, sourceRevision: "1" },
+			graphConfig(config, "att_serial"),
+		)) as TeamStateType;
+		expect(final.outcome?.kind).toBe("certified");
+		expect(final.reviews.map((r) => r.role).sort()).toEqual(["code_reviewer", "security_reviewer"]);
+		expect(d.port.peakConcurrency).toBe(1);
 	});
 
 	it("only a repairable validator result sends the team back to the coder, once per the repair bound, then the run ends repairable", async () => {

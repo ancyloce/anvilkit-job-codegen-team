@@ -1,7 +1,7 @@
 // The team's budget rules: every call at the per-send exposure Control
 // reserves, and concurrent roles never funded by one remaining send.
 import { describe, expect, it } from "vitest";
-import { addBudget, type BudgetLimits, moneyAmount, TeamBudget, zeroBudget } from "../src/budget.js";
+import { addBudget, type BudgetLimits, moneyAmount, preflight, TeamBudget, zeroBudget } from "../src/budget.js";
 import type { Role } from "../src/port/model.js";
 
 const limits = (aggregateCalls: number, aggregateExposure: bigint, perSend = 1_000_000n): BudgetLimits => ({
@@ -89,5 +89,34 @@ describe("TeamBudget", () => {
 		const after = TeamBudget.less(share, 1, 1_000_000n);
 		expect(after.calls).toBe(share.calls - 1);
 		expect(moneyAmount(after.aggregateExposure)).toBe(moneyAmount(share.aggregateExposure) - 1_000_000n);
+	});
+});
+
+describe("budget preflight (P2.4, TEAM-03)", () => {
+	const usd = (amount: bigint) => ({ currency: "USD", amount: amount.toString() });
+
+	it("keeps the reviewed concurrency when the headroom holds every concurrent send", () => {
+		const plan = preflight(limits(60, 1_200_000n, 20_000n), 2, usd(1_000_000n));
+		expect(plan.concurrentSends).toBe(2);
+		expect(plan.limits.aggregate.exposure).toBe(1_200_000n);
+	});
+
+	it("lowers the concurrency before the first send when the headroom holds one send at a time", () => {
+		// The default funding (1.0) against a route whose every send reserves 0.6: one reservation fits, two do not.
+		const plan = preflight(limits(60, 6_000_000n, 600_000n), 2, usd(1_000_000n));
+		expect(plan.concurrentSends).toBe(1);
+		// The run's own accounting stays the reviewed limit.
+		expect(plan.limits.aggregate.exposure).toBe(6_000_000n);
+	});
+
+	it("ends before the first send when the headroom funds no send at all", () => {
+		const plan = preflight(limits(60, 1_200_000n, 600_000n), 2, usd(500_000n));
+		const b = new TeamBudget(plan.limits);
+		expect(b.affords(b.remaining(zeroBudget(), "planner"))).toBe(false);
+	});
+
+	it("keeps the reviewed limits without a headroom and refuses another currency", () => {
+		expect(preflight(limits(60, 1_200_000n), 2).concurrentSends).toBe(2);
+		expect(() => preflight(limits(60, 1_200_000n), 2, { currency: "EUR", amount: "1" })).toThrow(/funded in EUR/);
 	});
 });
