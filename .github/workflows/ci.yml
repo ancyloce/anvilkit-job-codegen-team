@@ -23,22 +23,24 @@ env:
   # anvilkit-job-validator commit of the hero fixture and the validator chain
   # the tests run (the one the image's base digest was built from).
   VALIDATOR_REF: af16c6e7bed104c927d701db195ea52c3b7363d8
+permissions:
+  contents: read
 jobs:
   node:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: ancyloce/anvilkit-agent-contracts
           ref: ${{ env.CONTRACTS_REF }}
           path: .ci/contracts
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: ancyloce/anvilkit-job-validator
           ref: ${{ env.VALIDATOR_REF }}
           path: .ci/validator
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "24.19.0"
       - run: npm install -g pnpm@12.3.4
@@ -73,8 +75,8 @@ jobs:
   protocol:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: ancyloce/anvilkit-agent-contracts
           ref: ${{ env.CONTRACTS_REF }}
@@ -82,13 +84,23 @@ jobs:
       - run: sh tools/sync-protocol.sh --check .ci/contracts
   image:
     runs-on: ubuntu-24.04
+    # The validator base image is a private ghcr package: this job reads it
+    # with the run's token, which needs the package's "Manage Actions access"
+    # to grant this repository Read (a package setting, not this file).
+    permissions:
+      contents: read
+      packages: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: ancyloce/anvilkit-job-codegen-supervisor
           ref: ${{ env.SUPERVISOR_REF }}
           path: .ci/supervisor
+      - name: Read access to the validator base on ghcr.io
+        run: echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # The validator base is pulled by the digest the Dockerfile pins, from
       # the registry its VALIDATOR_REPOSITORY default names.
       - run: docker build --build-context supervisor=.ci/supervisor -t anvilkit-codegen-team:ci .
