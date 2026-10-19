@@ -395,11 +395,15 @@ describe("a repair launch repairs the prior source as the coder's own copy (P0.8
 
 const rootSkip = rootTestsUnavailable();
 
-describe.runIf(rootTestsRequired && rootSkip !== "")("root tests", () => {
-	it("are required (ANVILKIT_REQUIRE_ROOT_TESTS) and can run here", () => {
-		throw new Error(`ANVILKIT_REQUIRE_ROOT_TESTS is set: ${rootSkip}`);
+// Registered only when it fails: a guard reported as skipped whenever the
+// root tests run would make every complete run look incomplete.
+if (rootTestsRequired && rootSkip !== "") {
+	describe("root tests", () => {
+		it("are required (ANVILKIT_REQUIRE_ROOT_TESTS) and can run here", () => {
+			throw new Error(`ANVILKIT_REQUIRE_ROOT_TESTS is set: ${rootSkip}`);
+		});
 	});
-});
+}
 
 describe.skipIf(rootSkip !== "")("a repair launch under the real UID split (root: the coder runs as UID 10001)", () => {
 	let sidecar: FakeSidecar;
