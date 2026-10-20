@@ -63,7 +63,7 @@ RUN pnpm run build \
  && pnpm install --frozen-lockfile --prod \
  && node -e 'const Database = require("better-sqlite3"); new Database(":memory:").close()'
 
-FROM ${VALIDATOR_REPOSITORY}@sha256:274076d0354f6ef691936578914bc748cd71a4ad1ccb1365ef3fc26ce5d51178
+FROM ${VALIDATOR_REPOSITORY}@sha256:cba4ab8a4aa704c9264c3b8955d25b83796b140781a22b9ae0496b2eb248de2a
 # Pi's grep tool runs ripgrep. It is Debian trixie's package at an exact
 # version (from the signed archive), and the root-owned Pi agent directory's
 # bin/rg names it: the SDK's tools manager looks in <agent dir>/bin first,
