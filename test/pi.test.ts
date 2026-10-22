@@ -10,7 +10,7 @@ import { canonicalDigest } from "../src/digest.js";
 import { type CoderToolName, coderTools } from "../src/pi/boundary.js";
 import { createCoderSession, refuseDefaultStreamFn } from "../src/pi/session.js";
 import { ControlledModelPort, type ModelCallResult } from "../src/port/model.js";
-import { controlledModel, createControlledStreamFn } from "../src/port/pi.js";
+import { controlledModel, createControlledStreamFn, usageToPi } from "../src/port/pi.js";
 import { FakeSidecar } from "./doubles.js";
 
 describe("Pi over the ControlledModelPort", () => {
@@ -326,5 +326,25 @@ describe("Pi over the ControlledModelPort", () => {
 		s2.dispose();
 		expect(sidecar.requests).toHaveLength(2);
 		expect(sidecar.totalSends()).toBe(1);
+	});
+});
+
+describe("usageToPi: the Pi diagnostic view of the relay's native counters", () => {
+	it("counts the cached input once (pi-ai 1.4.0 counts input + output + cacheRead + cacheWrite) and keeps the native total", () => {
+		const u = usageToPi({ inputUnits: "100", outputUnits: "10", reasoningUnits: "0", cachedInputUnits: "30" });
+		expect(u).toMatchObject({ input: 70, cacheRead: 30, cacheWrite: 0, output: 10, totalTokens: 110 });
+		expect(u.input + u.output + u.cacheRead + u.cacheWrite).toBe(u.totalTokens);
+	});
+
+	it("keeps uncached usage as before and never reports a negative input", () => {
+		expect(usageToPi({ inputUnits: "12", outputUnits: "5", reasoningUnits: "0", cachedInputUnits: "0" })).toMatchObject(
+			{
+				input: 12,
+				cacheRead: 0,
+				totalTokens: 17,
+			},
+		);
+		expect(usageToPi({ inputUnits: "5", outputUnits: "1", reasoningUnits: "0", cachedInputUnits: "9" }).input).toBe(0);
+		expect(usageToPi(undefined).totalTokens).toBe(0);
 	});
 });

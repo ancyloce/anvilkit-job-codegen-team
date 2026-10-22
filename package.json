@@ -17,9 +17,9 @@
     "protocol:check": "sh tools/sync-protocol.sh --check"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "1.1.0",
-    "@earendil-works/pi-ai": "1.1.0",
-    "@earendil-works/pi-coding-agent": "1.1.0",
+    "@earendil-works/pi-agent-core": "1.4.0",
+    "@earendil-works/pi-ai": "1.4.0",
+    "@earendil-works/pi-coding-agent": "1.4.0",
     "@langchain/core": "1.2.11",
     "@langchain/langgraph": "1.4.15",
     "@langchain/langgraph-checkpoint": "1.1.5",

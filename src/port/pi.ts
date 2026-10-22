@@ -76,18 +76,26 @@ const zeroUsage = (): PiUsage => ({
 	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 });
 
+// The relay reports the native counters as the protocol states them:
+// inputUnits is inclusive of the cached input. Pi's own usage (pi-ai
+// 1.4.0, api/openai-completions: input = prompt − cacheRead − cacheWrite;
+// session statistics sum input + output + cacheRead + cacheWrite) counts
+// the cached part once, under cacheRead. So the Pi view carries the
+// non-cached part as input and keeps the native total in totalTokens;
+// nothing here is billing (Control settles the native counters).
 export function usageToPi(u: Usage | undefined): PiUsage {
 	if (!u) return zeroUsage();
 	const n = (s: string) => Number.parseInt(s, 10);
-	const input = n(u.inputUnits);
+	const inputUnits = n(u.inputUnits);
 	const output = n(u.outputUnits);
+	const cacheRead = n(u.cachedInputUnits);
 	return {
-		input,
+		input: Math.max(0, inputUnits - cacheRead),
 		output,
-		cacheRead: n(u.cachedInputUnits),
+		cacheRead,
 		cacheWrite: 0,
 		reasoning: n(u.reasoningUnits),
-		totalTokens: input + output,
+		totalTokens: inputUnits + output,
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 	};
 }
