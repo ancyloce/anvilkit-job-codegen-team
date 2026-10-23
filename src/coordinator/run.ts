@@ -21,6 +21,7 @@ import {
 	ControlledModelPort,
 	DeadlineExceededError,
 	EffectUncertainError,
+	ModelCallFailedError,
 	ModelCallRefusedError,
 } from "../port/model.js";
 import { ProtocolViolationError } from "../protocol.js";
@@ -57,6 +58,12 @@ export function outcomeOfError(err: unknown, lastRound?: number): TeamOutcome {
 	if (e instanceof DeadlineExceededError) return { kind: "deadline", failureCode: "DEADLINE_EXCEEDED", ...base };
 	if (e instanceof EffectUncertainError) return { kind: "effect_uncertain", failureCode: "EFFECT_UNCERTAIN", ...base };
 	if (e instanceof ModelCallRefusedError) return { kind: "model_denied", failureCode: e.code, ...base };
+	// A send that reached the model and ended failed keeps the relay's
+	// controlled class (UPSTREAM_TOOL_ARGUMENTS_INVALID, UPSTREAM_STATUS_*,
+	// ...) as the outcome's code: the run is still `failed`, the stage verdict
+	// stays the observer's (verdictFor), the class is in the evidence and the
+	// progress event.
+	if (e instanceof ModelCallFailedError) return { kind: "failed", failureCode: e.code, ...base };
 	if (e instanceof CandidateRoundRefusedError || e instanceof ProtocolViolationError)
 		return { kind: "infrastructure_failed", failureCode: "OBSERVER_FAILED", ...base };
 	if (e instanceof SpecialistOutputError) return { kind: "failed", ...base };
