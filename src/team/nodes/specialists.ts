@@ -3,13 +3,43 @@
 // role's remaining budget, or for a reviewer the share reserved for it
 // before the fan-out — and charges its calls at the per-send exposure.
 import { addBudget, TeamBudget } from "../../budget.js";
-import type { Role } from "../../port/model.js";
+import type { ControlledModelPort, Role } from "../../port/model.js";
 import type { NodeContext } from "../context.js";
-import { callCounter } from "../context.js";
-import { type Findings, type Plan, planUser, renderSource, reviewUser, runSpecialist, tool } from "../roles.js";
+import { callCounter, progressCodeOf } from "../context.js";
+import {
+	type Findings,
+	type Plan,
+	planUser,
+	renderSource,
+	reviewUser,
+	runSpecialist,
+	type SpecialistCall,
+	tool,
+} from "../roles.js";
 import type { TeamStateType } from "../state.js";
 
 type Node = (state: TeamStateType) => Promise<Partial<TeamStateType>>;
+
+/**
+ * Runs a node's specialist; an error that ends it (a failed or refused send,
+ * a bound, no acceptable answer) is reported as the node's `failed` boundary
+ * with its controlled code (plan 0005 §4.1) and then propagates unchanged:
+ * the report is display only and never a retry or a verdict.
+ */
+async function runNodeSpecialist<T>(
+	ctx: NodeContext,
+	node: "planner" | "retrieve" | "review",
+	round: number | undefined,
+	port: ControlledModelPort,
+	call: SpecialistCall<T>,
+): Promise<{ value: T; calls: number }> {
+	try {
+		return await runSpecialist<T>(port, call);
+	} catch (err) {
+		await ctx.report(node, "failed", round, progressCodeOf(err));
+		throw err;
+	}
+}
 
 /** The roles that review one revision in parallel, in the order their reservations are taken. */
 export const reviewerRoles = ["code_reviewer", "security_reviewer"] as const satisfies readonly Role[];
@@ -20,7 +50,7 @@ export function planNode(ctx: NodeContext): Node {
 		ctx.guardDeadline("plan");
 		await ctx.report("planner", "started");
 		const c = callCounter();
-		const { value } = await runSpecialist<Plan>(deps.port, {
+		const { value } = await runNodeSpecialist<Plan>(ctx, "planner", undefined, deps.port, {
 			role: "planner",
 			systemPrompt: deps.prompts.planner,
 			user: planUser(state.brief, state.sourceRevision),
@@ -61,25 +91,31 @@ export function retrieveNode(ctx: NodeContext): Node {
 		const c = callCounter();
 		const ids = new Set(found.evidence.map((e) => e.id));
 		const evidence = found.evidence.map((e) => `[${e.id}] (${e.source}) ${e.text}`).join("\n");
-		const { value } = await runSpecialist<{ answer: string; citations: string[] }>(deps.port, {
-			role: "retrieval",
-			systemPrompt: deps.prompts.retrieval,
-			user: `Question: ${question}\n\nEvidence:\n${evidence}\n\nAnswer with submit_retrieval, citing only the evidence ids above.`,
-			tool: tool("submit_retrieval"),
-			maxOutputTokens: deps.config.roles.retrieval.maxOutputTokens,
-			exposure: budget.perSend,
-			remaining: () => budget.remaining(addBudget(state.budget, budget.charge("retrieval", c.calls())), "retrieval"),
-			nextOrdinal: () => ctx.nextOrdinal("retrieval"),
-			onResult: c.onResult,
-			accept: (args) => {
-				const v = args as { answer: string; citations: string[] };
-				const invented = v.citations.filter((x) => !ids.has(x));
-				if (invented.length > 0)
-					return { ok: false, reason: `citations ${invented.join(", ")} are not among the returned evidence` };
-				if (v.citations.length === 0) return { ok: false, reason: "an answer must cite the evidence it rests on" };
-				return { ok: true, value: v };
+		const { value } = await runNodeSpecialist<{ answer: string; citations: string[] }>(
+			ctx,
+			"retrieve",
+			undefined,
+			deps.port,
+			{
+				role: "retrieval",
+				systemPrompt: deps.prompts.retrieval,
+				user: `Question: ${question}\n\nEvidence:\n${evidence}\n\nAnswer with submit_retrieval, citing only the evidence ids above.`,
+				tool: tool("submit_retrieval"),
+				maxOutputTokens: deps.config.roles.retrieval.maxOutputTokens,
+				exposure: budget.perSend,
+				remaining: () => budget.remaining(addBudget(state.budget, budget.charge("retrieval", c.calls())), "retrieval"),
+				nextOrdinal: () => ctx.nextOrdinal("retrieval"),
+				onResult: c.onResult,
+				accept: (args) => {
+					const v = args as { answer: string; citations: string[] };
+					const invented = v.citations.filter((x) => !ids.has(x));
+					if (invented.length > 0)
+						return { ok: false, reason: `citations ${invented.join(", ")} are not among the returned evidence` };
+					if (v.citations.length === 0) return { ok: false, reason: "an answer must cite the evidence it rests on" };
+					return { ok: true, value: v };
+				},
 			},
-		});
+		);
 		ctx.log("retrieve", { status: "evidence", citations: value.citations.length, calls: c.calls() });
 		await ctx.report("retrieve", "completed");
 		return {
@@ -112,7 +148,7 @@ export function reviewerNode(ctx: NodeContext, role: (typeof reviewerRoles)[numb
 		if (!reserved) throw new Error(`${role}: no allowance was reserved for this review round`);
 		const c = callCounter();
 		const rendered = renderSource(result.sealedDir, result.source, deps.config.source.maxReviewBytes);
-		const { value } = await runSpecialist<Findings>(deps.port, {
+		const { value } = await runNodeSpecialist<Findings>(ctx, "review", last.round, deps.port, {
 			role,
 			systemPrompt: role === "code_reviewer" ? deps.prompts.code_reviewer : deps.prompts.security_reviewer,
 			user: reviewUser(state.plan, last.sourceRevision, rendered),
