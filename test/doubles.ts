@@ -62,6 +62,10 @@ export class FakeSidecar {
 		observer: string;
 		manifest: Record<string, unknown>;
 	}> = [];
+	/** Progress reports (POST /v1/progress, plan 0005 Phase 2) in arrival order. */
+	readonly reports: Array<{ node: string; state: string; round?: string; outcomeCode?: string }> = [];
+	/** When set, POST /v1/progress answers this status with an error envelope (a refusal the coordinator must tolerate). */
+	refuseProgress: number | undefined;
 	accepted: AcceptedStage | undefined;
 	/** Accepted stages of earlier attempts of the operation (GET /v1/stages/<attemptId>: a repair launch's prior boundary). */
 	readonly priorStages = new Map<string, AcceptedStage>();
@@ -185,6 +189,25 @@ export class FakeSidecar {
 					sizeBytes: String(body.length),
 					objectVersion: `v-${handle}`,
 					state: "finalized",
+					existing: false,
+				});
+			}
+			if (req.method === "POST" && url === "/v1/progress") {
+				const report = JSON.parse(body.toString("utf8")) as {
+					node: string;
+					state: string;
+					round?: string;
+					outcomeCode?: string;
+				};
+				if (this.refuseProgress)
+					return this.json(res, this.refuseProgress, {
+						code: "STALE_EXECUTION",
+						reason: "progress refused by the double",
+					});
+				this.reports.push(report);
+				return this.json(res, 200, {
+					eventSeq: String(100 + this.reports.length),
+					transitionId: `progress:att_team:${report.node}:${report.round ?? ""}:${report.state}`,
 					existing: false,
 				});
 			}

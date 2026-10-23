@@ -148,6 +148,7 @@ describe("TeamRunner", () => {
 			port,
 			executor: new CodingExecutor(ex, localRunner()),
 			retrieval: insufficient,
+			progress: client,
 			deadline,
 			roundResults: new Map<number, RoundResult>(),
 			...over,
@@ -189,6 +190,42 @@ describe("TeamRunner", () => {
 		expect(d.port.peakConcurrency).toBe(2);
 		expect(sidecar.requests.find((q) => roleOf(q) === "planner")?.callId).toBe("att_team:planner:1");
 		expect(sidecar.requests.find((q) => roleOf(q) === "code_reviewer")?.callId).toBe("att_team:code_reviewer:1");
+		// Plan 0005 Phase 2: every node boundary reached the trusted sidecar's
+		// progress route in execution order; the internal validation reports
+		// its classification as a code, never as a verdict.
+		expect(
+			sidecar.reports.map(
+				(r) => `${r.node}:${r.state}${r.round ? ":" + r.round : ""}${r.outcomeCode ? ":" + r.outcomeCode : ""}`,
+			),
+		).toEqual([
+			"planner:started",
+			"planner:completed",
+			"retrieve:started",
+			"retrieve:completed:INSUFFICIENT_EVIDENCE",
+			"code:started:1",
+			"code:completed:1",
+			"review:started:1",
+			"review:completed:1",
+			"validate:started:1",
+			"validate:completed:1:certified",
+		]);
+	});
+
+	it("a progress route that refuses never changes the run (plan 0005 Phase 2: display only)", async () => {
+		sidecar.refuseProgress = 409;
+		const before = sidecar.reports.length;
+		try {
+			const d = deps({ validation: new ScriptedValidation([certified()]) }, config, "att_noprogress");
+			const graph = buildTeamGraph(d, new MemorySaver());
+			const final = (await graph.invoke(
+				{ brief: heroBrief, sourceRevision: "1" },
+				graphConfig(config, "att_noprogress"),
+			)) as TeamStateType;
+			expect(final.outcome?.kind).toBe("certified");
+			expect(sidecar.reports).toHaveLength(before);
+		} finally {
+			sidecar.refuseProgress = undefined;
+		}
 	});
 
 	it("P2.4 (TEAM-03): a headroom that holds one send at a time runs both reviewers one after the other and certifies", async () => {
