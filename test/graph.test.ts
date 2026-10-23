@@ -8,8 +8,15 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type RelayRequest, SidecarClient } from "../src/adapters/sidecar.js";
 import { zeroBudget } from "../src/budget.js";
 import { parseTeamConfig, type TeamConfig, teamBudget, teamBudgetPlan } from "../src/config.js";
+import { Completion } from "../src/coordinator/completion.js";
+import { outcomeOfError } from "../src/coordinator/run.js";
 import { CodingExecutor, type ExecutorConfig, type RoundResult } from "../src/executor.js";
-import { BudgetExhaustedError, ControlledModelPort, DeadlineExceededError } from "../src/port/model.js";
+import {
+	BudgetExhaustedError,
+	ControlledModelPort,
+	DeadlineExceededError,
+	ModelCallFailedError,
+} from "../src/port/model.js";
 import { readTree } from "../src/source.js";
 import { verdictFor } from "../src/stage/manifest.js";
 import type { TeamDeps } from "../src/team/context.js";
@@ -670,6 +677,63 @@ describe("TeamRunner", () => {
 		expect(again.budget.total.calls).toBe(12);
 		expect(sidecar.requests.length).toBeGreaterThan(requestsBefore);
 		saver.db.close();
+	});
+
+	it("a reviewer send the model spoils (UPSTREAM_TOOL_ARGUMENTS_INVALID) keeps that class: review reported failed with the code, the outcome carries it, the verdict stays the observer's, nothing is resent", async () => {
+		sidecar.script = teamScript({
+			code_reviewer: () => ({ behaviour: "failed", failedCode: "UPSTREAM_TOOL_ARGUMENTS_INVALID" }),
+		});
+		const validation = new ScriptedValidation([certified()]);
+		const d = deps({ validation }, config, "att_badargs");
+		let caught: unknown;
+		try {
+			await buildTeamGraph(d, new MemorySaver()).invoke(
+				{ brief: heroBrief, sourceRevision: "1" },
+				graphConfig(config, "att_badargs"),
+			);
+		} catch (err) {
+			caught = err;
+		}
+		expect(caught).toBeInstanceOf(ModelCallFailedError);
+		expect((caught as ModelCallFailedError).code).toBe("UPSTREAM_TOOL_ARGUMENTS_INVALID");
+		// One send per reviewer, no retry of the spoiled one, no validation afterwards.
+		const sent = sidecar.requests.filter((q) => q.callId.startsWith("att_badargs:"));
+		expect(sent.filter((q) => roleOf(q) === "code_reviewer")).toHaveLength(1);
+		expect(validation.inputs).toHaveLength(0);
+		// The node boundary for display names the class; no validate node ran.
+		const reports = sidecar.reports.map(
+			(r) => `${r.node}:${r.state}${r.round ? `:${r.round}` : ""}${r.outcomeCode ? `:${r.outcomeCode}` : ""}`,
+		);
+		expect(reports).toContain("review:started:1");
+		expect(reports).toContain("review:failed:1:UPSTREAM_TOOL_ARGUMENTS_INVALID");
+		expect(reports.some((r) => r.startsWith("validate:"))).toBe(false);
+		// The coordinator's outcome keeps the class; the stage verdict is still the observer's own failure.
+		const outcome = outcomeOfError(caught, 1);
+		expect(outcome).toMatchObject({ kind: "failed", failureCode: "UPSTREAM_TOOL_ARGUMENTS_INVALID", round: 1 });
+		expect(verdictFor(outcome)).toEqual({ verdict: "infrastructure_failed", failureCode: "OBSERVER_FAILED" });
+		const completion = new Completion(verdict, () => {});
+		completion.failed(caught);
+		expect(completion.result).toMatchObject({
+			outcome: { kind: "failed", failureCode: "UPSTREAM_TOOL_ARGUMENTS_INVALID" },
+			verdict: "infrastructure_failed",
+			failureCode: "OBSERVER_FAILED",
+		});
+		// An ordinary upstream failure of a planner send is classified the same way under its own code.
+		sidecar.script = teamScript({ planner: () => ({ behaviour: "failed" }) });
+		const d2 = deps({ validation: new ScriptedValidation([certified()]) }, config, "att_planfail");
+		let planErr: unknown;
+		try {
+			await buildTeamGraph(d2, new MemorySaver()).invoke(
+				{ brief: heroBrief, sourceRevision: "1" },
+				graphConfig(config, "att_planfail"),
+			);
+		} catch (err) {
+			planErr = err;
+		}
+		expect(outcomeOfError(planErr)).toMatchObject({ kind: "failed", failureCode: "UPSTREAM_FAILED" });
+		expect(sidecar.reports.map((r) => `${r.node}:${r.state}${r.outcomeCode ? `:${r.outcomeCode}` : ""}`)).toContain(
+			"planner:failed:UPSTREAM_FAILED",
+		);
 	});
 
 	it("a coder call Control refuses ends the run as model_denied: no reviewer, no validation, no repair, never a candidate verdict", async () => {

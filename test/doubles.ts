@@ -23,6 +23,8 @@ export interface ScriptedCall {
 	behaviour?: "ok" | "unknown" | "failed" | "canceled" | "refuse" | "cut" | "hang" | "no-final";
 	refuseCode?: string;
 	refuseStatus?: number;
+	/** The error code of a `failed` send (default UPSTREAM_FAILED). */
+	failedCode?: string;
 	cutAfter?: number;
 }
 
@@ -295,7 +297,7 @@ export class FakeSidecar {
 			if (s.usage !== false) next({ type: "usage", usage: s.usage ?? defaultUsage });
 			next({ type: "done", outcome: "succeeded" });
 		} else if (b === "unknown") next({ type: "error", outcome: "unknown", errorCode: "USAGE_MISSING" });
-		else if (b === "failed") next({ type: "error", outcome: "failed", errorCode: "UPSTREAM_FAILED" });
+		else if (b === "failed") next({ type: "error", outcome: "failed", errorCode: s.failedCode ?? "UPSTREAM_FAILED" });
 		else if (b === "canceled") next({ type: "error", outcome: "canceled", errorCode: "CANCELED" });
 		return out;
 	}
