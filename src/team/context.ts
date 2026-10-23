@@ -6,7 +6,16 @@ import type { Money, ProgressRecord, ProgressReport } from "../adapters/sidecar.
 import type { TeamBudget } from "../budget.js";
 import { type TeamConfig, teamBudget } from "../config.js";
 import type { CodingExecutor, RoundResult } from "../executor.js";
-import { type ControlledModelPort, DeadlineExceededError, type ModelCallResult, type Role } from "../port/model.js";
+import {
+	BudgetExhaustedError,
+	type ControlledModelPort,
+	DeadlineExceededError,
+	EffectUncertainError,
+	ModelCallFailedError,
+	ModelCallRefusedError,
+	type ModelCallResult,
+	type Role,
+} from "../port/model.js";
 import type { ValidationPort } from "../validation.js";
 import type { Prompts, RetrievalPort } from "./roles.js";
 
@@ -91,6 +100,20 @@ export function nodeContext(deps: TeamDeps): NodeContext {
 			}
 		},
 	};
+}
+
+/**
+ * The controlled code of an error that ended a node, for the node's `failed`
+ * progress report: the port's own classes carry it (the relay's error code
+ * of a failed send, Control's denial code, the team's bounds); any other
+ * error reports no code. Never read from a message text.
+ */
+export function progressCodeOf(err: unknown): string | undefined {
+	if (err instanceof ModelCallFailedError || err instanceof ModelCallRefusedError) return err.code;
+	if (err instanceof BudgetExhaustedError) return "BUDGET_EXHAUSTED";
+	if (err instanceof DeadlineExceededError) return "DEADLINE_EXCEEDED";
+	if (err instanceof EffectUncertainError) return "EFFECT_UNCERTAIN";
+	return undefined;
 }
 
 /** Counts a node's own calls (each at the per-send exposure) for its charge. */
