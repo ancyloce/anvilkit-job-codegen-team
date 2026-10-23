@@ -164,6 +164,9 @@ export async function runTeam(
 			roundResults,
 			log,
 			budgetHeadroom: scope.budgetHeadroom,
+			// The trusted sidecar's progress route (plan 0005 Phase 2): node
+			// boundaries for display, under the scope Control confirms.
+			progress: inputs.sidecar,
 		},
 		saver,
 	);
