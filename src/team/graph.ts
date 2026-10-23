@@ -33,7 +33,7 @@ export function buildTeamGraph(deps: TeamDeps, checkpointer: BaseCheckpointSaver
 		.addNode("review", reviewFanOutNode(ctx))
 		.addNode("code_reviewer", reviewerNode(ctx, "code_reviewer"))
 		.addNode("security_reviewer", reviewerNode(ctx, "security_reviewer"))
-		.addNode("review_join", reviewJoinNode())
+		.addNode("review_join", reviewJoinNode(ctx))
 		.addNode("validate", validateNode(ctx))
 		.addNode("seal", sealNode(ctx))
 		.addEdge(START, "planner")

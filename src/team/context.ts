@@ -2,7 +2,7 @@
 // configuration and budget, the attempt's absolute deadline (never reset),
 // and the per-role call ordinals that keep call identities deterministic
 // across a restart of the same run.
-import type { Money } from "../adapters/sidecar.js";
+import type { Money, ProgressRecord, ProgressReport } from "../adapters/sidecar.js";
 import type { TeamBudget } from "../budget.js";
 import { type TeamConfig, teamBudget } from "../config.js";
 import type { CodingExecutor, RoundResult } from "../executor.js";
@@ -24,6 +24,16 @@ export interface TeamDeps {
 	log?: (event: string, fields?: Record<string, unknown>) => void;
 	/** The operation's unreserved budget at the start (P2.4): clamps the run's aggregate exposure. */
 	budgetHeadroom?: Money;
+	/**
+	 * The trusted sidecar's progress route (plan 0005 Phase 2): node
+	 * boundaries for display. Absent in environments without it; a refusal
+	 * never changes the run.
+	 */
+	progress?: ProgressReporter;
+}
+
+export interface ProgressReporter {
+	progress(report: ProgressReport): Promise<ProgressRecord>;
 }
 
 export interface NodeContext {
@@ -31,6 +41,18 @@ export interface NodeContext {
 	budget: TeamBudget;
 	now: () => Date;
 	log: (event: string, fields?: Record<string, unknown>) => void;
+	/**
+	 * Reports a node boundary for display through the trusted sidecar (plan
+	 * 0005 Phase 2). Best effort: a refusal or an unavailable route is logged
+	 * and ignored, so progress can never fail, delay beyond its timeout or
+	 * steer the run; it is never a verdict.
+	 */
+	report(
+		node: ProgressReport["node"],
+		state: ProgressReport["state"],
+		round?: number,
+		outcomeCode?: string,
+	): Promise<void>;
 	/** The next call ordinal of a role. */
 	nextOrdinal(role: Role): number;
 	/** Throws DeadlineExceededError when the deadline margin is reached. */
@@ -57,6 +79,17 @@ export function nodeContext(deps: TeamDeps): NodeContext {
 			if (past()) throw new DeadlineExceededError(`${node}: the deadline ${deps.deadline.toISOString()} is reached`);
 		},
 		pastDeadline: past,
+		async report(node, state, round, outcomeCode) {
+			if (!deps.progress) return;
+			const report: ProgressReport = { node, state };
+			if (round !== undefined) report.round = String(round);
+			if (outcomeCode) report.outcomeCode = outcomeCode;
+			try {
+				await deps.progress.progress(report);
+			} catch (err) {
+				(deps.log ?? (() => {}))("progress not recorded", { node, state, round, error: (err as Error).message });
+			}
+		},
 	};
 }
 

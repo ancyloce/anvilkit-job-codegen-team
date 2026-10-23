@@ -18,6 +18,7 @@ export function planNode(ctx: NodeContext): Node {
 	const { deps, budget } = ctx;
 	return async (state) => {
 		ctx.guardDeadline("plan");
+		await ctx.report("planner", "started");
 		const c = callCounter();
 		const { value } = await runSpecialist<Plan>(deps.port, {
 			role: "planner",
@@ -39,6 +40,7 @@ export function planNode(ctx: NodeContext): Node {
 			},
 		});
 		ctx.log("plan", { steps: value.steps.length, calls: c.calls() });
+		await ctx.report("planner", "completed");
 		return { plan: value, budget: budget.charge("planner", c.calls()) };
 	};
 }
@@ -47,11 +49,13 @@ export function retrieveNode(ctx: NodeContext): Node {
 	const { deps, budget } = ctx;
 	return async (state) => {
 		ctx.guardDeadline("retrieve");
+		await ctx.report("retrieve", "started");
 		const question = `Which reviewed conventions apply to a ${state.brief.puckType} component of this project?`;
 		const found = await deps.retrieval.retrieve(question);
 		if (found.status === "insufficient_evidence") {
 			// No evidence, no call: the specialist has nothing to cite.
 			ctx.log("retrieve", { status: found.status });
+			await ctx.report("retrieve", "completed", undefined, "INSUFFICIENT_EVIDENCE");
 			return { retrieval: { status: "insufficient_evidence", reason: found.reason, calls: 0 } };
 		}
 		const c = callCounter();
@@ -77,6 +81,7 @@ export function retrieveNode(ctx: NodeContext): Node {
 			},
 		});
 		ctx.log("retrieve", { status: "evidence", citations: value.citations.length, calls: c.calls() });
+		await ctx.report("retrieve", "completed");
 		return {
 			retrieval: { status: "evidence", answer: value.answer, citations: value.citations, calls: c.calls() },
 			budget: budget.charge("retrieval", c.calls()),
@@ -86,7 +91,10 @@ export function retrieveNode(ctx: NodeContext): Node {
 
 /** The fan-out point: one step, before both reviewers run, reserves what each may spend from the budget the state holds now. */
 export function reviewFanOutNode(ctx: NodeContext): Node {
-	return async (state) => ({ reservations: ctx.budget.reserveParallel(state.budget, reviewerRoles) });
+	return async (state) => {
+		await ctx.report("review", "started", state.rounds[state.rounds.length - 1]?.round);
+		return { reservations: ctx.budget.reserveParallel(state.budget, reviewerRoles) };
+	};
 }
 
 export function reviewerNode(ctx: NodeContext, role: (typeof reviewerRoles)[number]): Node {
@@ -146,6 +154,10 @@ export function reviewerNode(ctx: NodeContext, role: (typeof reviewerRoles)[numb
 	};
 }
 
-export function reviewJoinNode(): Node {
-	return async () => ({ reviewRounds: 1 });
+/** The join after both reviewers: the review round is complete (reported for display), whatever the findings. */
+export function reviewJoinNode(ctx: NodeContext): Node {
+	return async (state) => {
+		await ctx.report("review", "completed", state.rounds[state.rounds.length - 1]?.round);
+		return { reviewRounds: 1 };
+	};
 }

@@ -18,6 +18,7 @@ export function validateNode(ctx: NodeContext): (state: TeamStateType) => Promis
 		ctx.guardDeadline("validate");
 		const last = state.rounds[state.rounds.length - 1];
 		if (!last) throw new Error("validate: nothing to validate");
+		await ctx.report("validate", "started", last.round);
 		const result = deps.roundResults.get(last.round);
 		if (!result?.source) {
 			const code = result?.sourceError?.code ?? "CANDIDATE_BUILD_FAILED";
@@ -27,6 +28,7 @@ export function validateNode(ctx: NodeContext): (state: TeamStateType) => Promis
 				detail: result?.sourceError?.message ?? "the round sealed no source",
 				certification: { verdict: "-", complete: false, checks: [], bindings: {}, digest: "", dir: "" },
 			};
+			await ctx.report("validate", "completed", last.round, code);
 			return {
 				validations: [{ round: last.round, sourceRevision: last.sourceRevision, manifestDigest: "", result: res }],
 			};
@@ -39,6 +41,7 @@ export function validateNode(ctx: NodeContext): (state: TeamStateType) => Promis
 		const mismatch = identityMismatch(path.join(result.sealedDir, "source"), identity);
 		if (mismatch) {
 			ctx.log("validate", { round: last.round, status: "invalid", failureCode: identityMismatchCode });
+			await ctx.report("validate", "completed", last.round, identityMismatchCode);
 			const res: ValidationResult = {
 				status: "invalid",
 				failureCode: identityMismatchCode,
@@ -76,6 +79,10 @@ export function validateNode(ctx: NodeContext): (state: TeamStateType) => Promis
 			status: res.status,
 			failureCode: "failureCode" in res ? res.failureCode : undefined,
 		});
+		// The team's own classification, for display only: the code it goes on
+		// with, or "certified" as the class name; the independent Validator's
+		// verdict arrives later on its own attempt.
+		await ctx.report("validate", "completed", last.round, "failureCode" in res ? res.failureCode : res.status);
 		return {
 			validations: [
 				{

@@ -14,7 +14,11 @@ export function afterCode(ctx: NodeContext) {
 		if (state.outcome) return END; // the round ended the run (an unreconciled call, a refusal, a bound)
 		const last = state.rounds[state.rounds.length - 1];
 		if (!last?.manifestDigest) return "validate"; // nothing sealed to review; the validation records the seal error
-		return state.reviewRounds < ctx.deps.config.reviews.max ? "review" : "validate";
+		if (state.reviewRounds < ctx.deps.config.reviews.max) return "review";
+		// The review bound is reached: the round goes straight to validation,
+		// and the display learns the review was skipped (best effort).
+		void ctx.report("review", "skipped", last.round);
+		return "validate";
 	};
 }
 

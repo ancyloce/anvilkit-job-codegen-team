@@ -56,6 +56,7 @@ export function codeNode(ctx: NodeContext): Node {
 					: "No retrieved conventions were available; follow the plan and the source contract only.",
 			].join("\n\n");
 		}
+		await ctx.report("code", "started", round);
 		const result = await deps.executor.round({
 			round,
 			kind: isRepair ? "repair" : "code",
@@ -88,6 +89,16 @@ export function codeNode(ctx: NodeContext): Node {
 			stop: result.report.stop,
 		};
 		ctx.log("code", { round, kind: summary.kind, files: summary.files, ended: summary.ended, calls });
+		// For display: a sealed round completed the node; a round that sealed
+		// nothing failed it with the controlled code the run goes on with.
+		if (summary.manifestDigest) await ctx.report("code", "completed", round);
+		else
+			await ctx.report(
+				"code",
+				"failed",
+				round,
+				result.outcome?.failureCode ?? result.sourceError?.code ?? "CANDIDATE_BUILD_FAILED",
+			);
 		const update: Partial<TeamStateType> = {
 			rounds: [summary],
 			sourceRevision: revision,
