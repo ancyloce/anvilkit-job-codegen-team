@@ -106,6 +106,23 @@ export interface Transfer {
 	existing: boolean;
 }
 
+/** One node boundary of the team graph, reported for display (plan 0005 Phase 2). */
+export interface ProgressReport {
+	node: "planner" | "retrieve" | "code" | "review" | "validate";
+	state: "started" | "completed" | "failed" | "skipped";
+	/** The team's internal coding round the node belongs to; absent for the planner and the retrieval specialist. */
+	round?: string;
+	/** A controlled code of a failed or classified node; never prose. */
+	outcomeCode?: string;
+}
+
+/** Control's record of a progress report. */
+export interface ProgressRecord {
+	eventSeq: string;
+	transitionId: string;
+	existing: boolean;
+}
+
 export interface Stage {
 	stageId: string;
 	resultDigest: string;
@@ -276,6 +293,17 @@ export class SidecarClient {
 			JSON.stringify({ verdict, failureCode, observerIdentity, manifest: JSON.parse(manifest.toString("utf8")) }),
 		);
 		return this.json("POST", "/v1/results", { "content-type": "application/json" }, body);
+	}
+
+	/**
+	 * POST /v1/progress: one node boundary of this attempt for display (plan
+	 * 0005 Phase 2), recorded by Control as an operation event under the
+	 * scope the sidecar confirms (trusted socket). Never a verdict; a refusal
+	 * is the caller's to log and ignore.
+	 */
+	async progress(report: ProgressReport): Promise<ProgressRecord> {
+		const body = Buffer.from(JSON.stringify(report));
+		return this.json("POST", "/v1/progress", { "content-type": "application/json" }, body);
 	}
 
 	/**
