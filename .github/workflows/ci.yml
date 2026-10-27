@@ -17,12 +17,13 @@ env:
   # the published commit of tag go/v0.1.10 (README.md).
   CONTRACTS_REF: b3fe8697697902fb8c0767c2463f0af7c945842a
   # anvilkit-job-codegen-supervisor commit whose sources the image builds
-  # (the named build context "supervisor"): its P0.8 commit (harness UID
-  # stop, component in the envelope).
-  SUPERVISOR_REF: 74e39f9a90cb5d85b458c52cc7490145dc05c646
+  # (the named build context "supervisor"): the commit the anvilkit-services
+  # parent records and its job-images workflow builds the team image with
+  # (Go 1.27.3, 2026-10-26).
+  SUPERVISOR_REF: b1fab49b8514e93c5355ab6601f3a08b941a7257
   # anvilkit-job-validator commit of the hero fixture and the validator chain
   # the tests run (the one the image's base digest was built from).
-  VALIDATOR_REF: af16c6e7bed104c927d701db195ea52c3b7363d8
+  VALIDATOR_REF: d99dff1c04b74071e2ec62deade187d1b113a66a
 permissions:
   contents: read
 jobs:
@@ -84,9 +85,9 @@ jobs:
       - run: sh tools/sync-protocol.sh --check .ci/contracts
   image:
     runs-on: ubuntu-24.04
-    # The validator base image is a private ghcr package: this job reads it
-    # with the run's token, which needs the package's "Manage Actions access"
-    # to grant this repository Read (a package setting, not this file).
+    # The validator base image is the public ghcr package
+    # anvilkit-job-validator (published by anvilkit-services' job-images
+    # workflow); the login below is kept for a private registry.
     permissions:
       contents: read
       packages: read
