@@ -35,9 +35,11 @@ parallelism: 2
 recursionLimit: 64
 deadlineMarginSeconds: 30
 # roles: per role the calls (each accounted at route.exposurePerSend) and
-# the output tokens per call.
+# the output tokens per call. The planner holds the route bound: under the
+# contract-first prompts its plan outgrew 2048 and was cut mid-call (B1,
+# 2026-10-28), which the Proxy ends as UPSTREAM_TOOL_ARGUMENTS_INVALID.
 roles:
-  planner: { maxCalls: 2, maxOutputTokens: 2048 }
+  planner: { maxCalls: 2, maxOutputTokens: 4096 }
   retrieval: { maxCalls: 2, maxOutputTokens: 1024 }
   coder: { maxCalls: 40, maxOutputTokens: 4096 }
   code_reviewer: { maxCalls: 3, maxOutputTokens: 2048 }
