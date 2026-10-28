@@ -35,3 +35,19 @@ describe("the team prompts state the component contract's editable field types",
 		});
 	}
 });
+
+// The validator fails a candidate whose non-empty text or textarea default is
+// missing from the rendered text (jobs/validator src/validate.ts, the
+// browser-host check), and a Puck field configuration with a `default` does
+// not compile: B1 run 3 (plan 0005 §11.8, 2026-10-28) rendered a dismiss label
+// only as an aria-label and, at the reviewer's request, put `default` into a
+// TextField.
+describe("the team prompts state the rendered-default and Puck-field rules", () => {
+	for (const role of ["planner", "coder", "code_reviewer"]) {
+		it(`${role} states both rules`, () => {
+			const text = readFileSync(path.join(packageRoot, "agent", "team", "prompts", `${role}.md`), "utf8");
+			expect(text).toContain("is rendered as visible text");
+			expect(text).toContain("Puck field configurations carry no `default`");
+		});
+	}
+});
