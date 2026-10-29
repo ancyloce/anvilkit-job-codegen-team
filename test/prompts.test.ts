@@ -75,3 +75,87 @@ describe("the team prompts state the lockfile version exactly", () => {
 		});
 	}
 });
+
+// B1 run 6 (plan 0005 §11.11, 2026-10-29) failed on a package.json key the
+// validator refuses (jobs/validator src/source.ts allowedPackageKeys), and on a
+// Puck field the declaration lacks, added at a security reviewer's request (the
+// validator's SSR check compares the config's fields with editableFields). The
+// code reviewer also raised a lockfile finding over the packages section, which
+// the validator's lockfile check never reads.
+describe("the team prompts state the package, field-set, plan-bound and lockfile-section rules", () => {
+	const prompt = (role: string) =>
+		readFileSync(path.join(packageRoot, "agent", "team", "prompts", `${role}.md`), "utf8");
+	// The keys jobs/validator src/source.ts accepts in package.json.
+	const validatorPackageKeys = ["dependencies", "description", "license", "name", "version"];
+
+	for (const role of ["planner", "coder", "code_reviewer"]) {
+		it(`${role} allows exactly the package.json keys the validator accepts`, () => {
+			const m = prompt(role).match(/only the keys ((?:[a-z]+, )+[a-z]+) and ([a-z]+)/);
+			expect(m, "the prompt names the package.json keys").not.toBeNull();
+			const keys = [...(m?.[1] ?? "").split(", "), m?.[2] ?? ""].sort();
+			expect(keys).toEqual(validatorPackageKeys);
+		});
+	}
+
+	for (const role of ["planner", "coder", "code_reviewer", "security_reviewer"]) {
+		it(`${role} keeps the Puck config's fields exactly the editableFields`, () => {
+			const text = prompt(role);
+			expect(text).toContain("Puck config's `fields`");
+			expect(text).toContain("exactly the `editableFields` of component.json");
+		});
+	}
+
+	it("the coder adds no field, prop or capability beyond the plan, whatever a finding asks", () => {
+		const text = prompt("coder");
+		expect(text).toContain("Never add a field, prop or capability the plan does not state");
+		expect(text).toContain(
+			"a package.json key other than these five, a field, prop or capability the plan does not state)",
+		);
+	});
+
+	for (const role of ["code_reviewer", "security_reviewer"]) {
+		it(`${role} never asks for a field, prop or capability beyond the plan`, () => {
+			expect(prompt(role)).toContain("never ask for a field, prop or capability the plan does not state");
+		});
+	}
+
+	for (const role of ["coder", "code_reviewer", "security_reviewer"]) {
+		it(`${role} fixes a security concern within the plan`, () => {
+			const text = prompt(role);
+			expect(text).toContain("a checked safe constant");
+			expect(text).toContain("behavior the plan does not require");
+		});
+	}
+
+	for (const role of ["code_reviewer", "security_reviewer"]) {
+		it(`${role} reports a conflict with required functionality and asks for a decision`, () => {
+			expect(prompt(role)).toContain(
+				"if the fix would change functionality the plan requires, report the conflict and ask for a decision",
+			);
+		});
+	}
+
+	it("the coder changes nothing outside the plan for a finding that asks for a decision", () => {
+		expect(prompt("coder")).toContain(
+			"a finding that reports a conflict and asks for a decision changes nothing outside the plan",
+		);
+	});
+
+	for (const role of ["code_reviewer", "security_reviewer"]) {
+		it(`${role} does not treat the lockfile's packages or snapshots sections alone as a finding`, () => {
+			expect(prompt(role)).toContain(
+				"the presence or absence of `packages` or `snapshots` sections alone is not a finding",
+			);
+		});
+	}
+
+	for (const role of ["coder", "code_reviewer"]) {
+		it(`${role} states the lockfile importer rules the validator checks`, () => {
+			const text = prompt(role);
+			expect(text).toContain(
+				"exactly one importer '.' with no devDependencies, optionalDependencies or peerDependencies",
+			);
+			expect(text).toContain("specifier and version equal to the declared version");
+		});
+	}
+});
