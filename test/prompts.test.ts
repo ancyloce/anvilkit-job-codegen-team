@@ -51,3 +51,27 @@ describe("the team prompts state the rendered-default and Puck-field rules", () 
 		});
 	}
 });
+
+// The validator requires pnpm-lock.yaml's lockfileVersion to be a string
+// starting with "9." (jobs/validator src/source.ts): B1 run 5 (plan 0005
+// §11.10, 2026-10-29) read the code reviewer's "lockfileVersion 9" literally,
+// raised a blocker against '9.0', and the coder's bare 9 failed the build.
+describe("the team prompts state the lockfile version exactly", () => {
+	const prompt = (role: string) =>
+		readFileSync(path.join(packageRoot, "agent", "team", "prompts", `${role}.md`), "utf8");
+
+	for (const role of ["coder", "code_reviewer"]) {
+		it(`${role} states lockfileVersion '9.0' and keeps it over any finding`, () => {
+			const text = prompt(role);
+			expect(text).toContain("`lockfileVersion: '9.0'`");
+			expect(text).toContain("a lockfileVersion other than '9.0'");
+		});
+	}
+
+	for (const role of ["planner", "coder", "code_reviewer", "security_reviewer", "retrieval"]) {
+		it(`${role} never states another lockfile version`, () => {
+			// A version given as anything but the quoted '9.0': 9, 9.0 unquoted, '9', "9.0".
+			expect(prompt(role)).not.toMatch(/lockfileVersion:?\s*(?!'9\.0')['"]?\d/);
+		});
+	}
+});
