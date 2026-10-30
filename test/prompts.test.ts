@@ -159,3 +159,47 @@ describe("the team prompts state the package, field-set, plan-bound and lockfile
 		});
 	}
 });
+
+// B1 run 7 (plan 0005 §11.12, 2026-10-29) declared a URL, a storage key, an
+// enumeration and two booleans as text fields with non-empty defaults; the
+// validator's rendered-default rule failed them, and the reviewers' plan bound
+// undid the coder's attempt to show them. The validator also renders the first
+// declared text or textarea field with a value of its own and looks for that
+// value in the visible text (jobs/validator src/validate.ts nonceField).
+describe("the team prompts state the display-field rule", () => {
+	const prompt = (role: string) =>
+		readFileSync(path.join(packageRoot, "agent", "team", "prompts", `${role}.md`), "utf8");
+
+	for (const role of ["planner", "coder", "code_reviewer"]) {
+		it(`${role} keeps text fields for display text and non-display values out of them`, () => {
+			const text = prompt(role);
+			expect(text).toContain("A text or textarea field is display text");
+			expect(text).toContain(
+				"(a URL, a storage key, an identifier or a CSS value such as a colour) is never a text or textarea field with a non-empty default",
+			);
+			expect(text).toContain("a text field with an empty default whose empty value the code replaces with a constant");
+			expect(text).toContain("Fixed choices and booleans are select or radio fields");
+			expect(text).toContain("The first text or textarea field of editableFields is display text");
+		});
+	}
+
+	for (const role of ["planner", "coder", "code_reviewer", "security_reviewer", "retrieval"]) {
+		it(`${role} never makes a URL or a colour a text field`, () => {
+			expect(prompt(role)).not.toMatch(/(?:colour|URL)[^.;:()]* is a text field/);
+		});
+	}
+
+	it("the coder turns a planned non-display text field into an allowed form, whatever a finding asks", () => {
+		const text = prompt("coder");
+		expect(text).toContain(
+			"keep the field's name, give it an empty default and use the plan's default as that constant",
+		);
+		expect(text).toContain("a non-display value in a text field with a non-empty default, a package.json key");
+	});
+
+	it("the code reviewer accepts that form and never asks to show a non-display value", () => {
+		const text = prompt("code_reviewer");
+		expect(text).toContain("follows the source contract and is no finding");
+		expect(text).toContain("never ask to show a URL, a storage key or another non-display value as text");
+	});
+});
