@@ -1,7 +1,11 @@
-import { readFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { pathToFileURL } from "node:url";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { loadTeamConfig } from "../src/config.js";
 import { contractsDir, packageRoot } from "../src/contracts.js";
+import { heroFixture, validatorPackage } from "./helpers.js";
 
 // The editable field types the prompts state are exactly the component
 // contract's: a plan with a type the contract lacks fails every repair round
@@ -201,5 +205,111 @@ describe("the team prompts state the display-field rule", () => {
 		const text = prompt("code_reviewer");
 		expect(text).toContain("follows the source contract and is no finding");
 		expect(text).toContain("never ask to show a URL, a storage key or another non-display value as text");
+	});
+});
+
+// The package and lockfile rules the prompts state must be the validator's
+// own, not a copy that drifts from it. A source written exactly to the coder
+// prompt passes the validator's source contract (jobs/validator
+// src/source.ts readSource), and the departures of B1 runs 5 and 6 (a bare
+// lockfileVersion 9, a `main` key; plan 0005 §11.10–§11.11) are refused. The
+// rules come from the prompt text and the verdicts from the validator package,
+// so a change on either side that breaks their agreement fails here, in team
+// CI, before an image is built or a paid run is spent. Without the built
+// validator these cases skip, unless ANVILKIT_REQUIRE_VALIDATOR says the
+// environment must have it (CI).
+const validatorBuilt =
+	existsSync(path.join(validatorPackage, "dist", "source.js")) &&
+	existsSync(path.join(validatorPackage, "node_modules"));
+
+describe.skipIf(!validatorBuilt && !process.env.ANVILKIT_REQUIRE_VALIDATOR)(
+	"a source written to the coder prompt's package and lockfile rules passes the validator's source contract",
+	() => {
+		const coder = readFileSync(path.join(packageRoot, "agent", "team", "prompts", "coder.md"), "utf8");
+		const listed = coder.match(/only the keys ((?:[a-z]+, )+[a-z]+) and ([a-z]+)/);
+		const promptKeys = [...(listed?.[1] ?? "").split(", "), listed?.[2] ?? ""];
+		const promptLockfileVersion = coder.match(/`lockfileVersion: ('[^']+')`/)?.[1];
+		let check: (dir: string) => void;
+		let dir: string;
+
+		beforeAll(async () => {
+			const dist = (file: string) => pathToFileURL(path.join(validatorPackage, "dist", file)).href;
+			const { readSource } = await import(dist("source.js"));
+			const { loadProfiles } = await import(dist("profiles.js"));
+			const profiles = loadProfiles();
+			check = (source) =>
+				readSource(source, { sourceRevision: "1", profile: profiles.build, limits: profiles.validator.limits });
+		});
+		beforeEach(() => {
+			dir = mkdtempSync(path.join(tmpdir(), "prompt-source-"));
+			cpSync(heroFixture, dir, { recursive: true });
+		});
+		afterEach(() => {
+			rmSync(dir, { recursive: true, force: true });
+		});
+
+		const packageJson = () => JSON.parse(readFileSync(path.join(dir, "package.json"), "utf8"));
+		const writePackage = (doc: Record<string, unknown>) =>
+			writeFileSync(path.join(dir, "package.json"), `${JSON.stringify(doc, null, 2)}\n`);
+		const writeLockfileVersion = (value: string) => {
+			const lock = path.join(dir, "pnpm-lock.yaml");
+			writeFileSync(lock, readFileSync(lock, "utf8").replace(/^lockfileVersion: .*$/m, `lockfileVersion: ${value}`));
+		};
+
+		it("the prompt names its keys and its lockfile version", () => {
+			expect(listed, "the coder prompt names the package.json keys").not.toBeNull();
+			expect(promptLockfileVersion, "the coder prompt states the lockfileVersion line").toBeDefined();
+		});
+
+		it("a package.json with exactly the prompt's keys is accepted", () => {
+			const doc = packageJson();
+			expect(Object.keys(doc).filter((k) => !promptKeys.includes(k))).toEqual([]);
+			expect(
+				promptKeys.filter((k) => !(k in doc)),
+				"the fixture carries every listed key",
+			).toEqual([]);
+			writePackage(Object.fromEntries(promptKeys.map((k) => [k, doc[k]])));
+			expect(() => check(dir)).not.toThrow();
+		});
+
+		// Keys a coder adds to a package.json by habit; the prompt lists none.
+		const unlisted: Record<string, unknown> = {
+			main: "src/index.tsx",
+			module: "src/index.tsx",
+			types: "src/index.tsx",
+			exports: { ".": "./src/index.tsx" },
+			scripts: { build: "tsc" },
+			type: "module",
+			private: true,
+			files: ["src"],
+			peerDependencies: { react: "19.3.0" },
+			devDependencies: { typescript: "6.0.3" },
+		};
+		for (const [key, value] of Object.entries(unlisted)) {
+			it(`a package.json key the prompt does not list (${key}) is refused`, () => {
+				expect(promptKeys).not.toContain(key);
+				writePackage({ ...packageJson(), [key]: value });
+				expect(() => check(dir)).toThrow(`package.json: field ${key} is not accepted`);
+			});
+		}
+
+		it("the lockfileVersion the prompt states is accepted and the bare number 9 is refused", () => {
+			writeLockfileVersion(promptLockfileVersion ?? "");
+			expect(() => check(dir)).not.toThrow();
+			writeLockfileVersion("9");
+			expect(() => check(dir)).toThrow("lockfileVersion 9.x is required");
+		});
+	},
+);
+
+// The planner writes the whole plan in one call, so it holds the route's full
+// output bound: B1 run 2's plan was cut at 2048 of 4096 tokens and the Proxy
+// ended the call UPSTREAM_TOOL_ARGUMENTS_INVALID (plan 0005 §11.7). The parent
+// repository's tools/check-model-routes.py ties route.maxTokens to the Model
+// Proxy's route bound.
+describe("the planner holds the route's output bound", () => {
+	it("team.yaml gives the planner route.maxTokens", () => {
+		const config = loadTeamConfig(path.join(packageRoot, "team.yaml"));
+		expect(config.roles.planner.maxOutputTokens).toBe(config.route.maxTokens);
 	});
 });
