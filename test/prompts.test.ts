@@ -236,7 +236,17 @@ describe.skipIf(!validatorBuilt && !process.env.ANVILKIT_REQUIRE_VALIDATOR)(
 			const dist = (file: string) => pathToFileURL(path.join(validatorPackage, "dist", file)).href;
 			const { readSource } = await import(dist("source.js"));
 			const { loadProfiles } = await import(dist("profiles.js"));
-			const profiles = loadProfiles();
+			// The validator finds the contract schemas through ANVILKIT_VALIDATOR_CONTRACTS_DIR,
+			// as the team's validator adapter passes it (src/adapters/validator.ts); its own
+			// fallback, a contracts/ beside the parent's jobs/, is absent in this repository's CI.
+			const previous = process.env.ANVILKIT_VALIDATOR_CONTRACTS_DIR;
+			process.env.ANVILKIT_VALIDATOR_CONTRACTS_DIR = previous ?? contractsDir();
+			let profiles: ReturnType<typeof loadProfiles>;
+			try {
+				profiles = loadProfiles();
+			} finally {
+				if (previous === undefined) delete process.env.ANVILKIT_VALIDATOR_CONTRACTS_DIR;
+			}
 			check = (source) =>
 				readSource(source, { sourceRevision: "1", profile: profiles.build, limits: profiles.validator.limits });
 		});
