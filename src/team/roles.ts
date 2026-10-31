@@ -62,19 +62,29 @@ export interface Prompts {
 	security_reviewer: string;
 }
 
-/** Loads the five trusted prompts from the explicit agent directory (agent/team/prompts). */
+/**
+ * Loads the five trusted prompts from the explicit agent directory
+ * (agent/team/prompts). Every role that plans, writes or reviews source gets
+ * the shared source contract (contract.md: the validator's candidate-facing
+ * rules, DEC-036); the planner and the coder also get the exemplar
+ * (exemplar.md: the validator's certified hero fixture, byte for byte). The
+ * composed texts are what the team profile digest binds.
+ */
 export function loadPrompts(agentDir: string): Prompts {
 	const read = (name: string) => {
 		const text = readFileSync(path.join(agentDir, "team", "prompts", `${name}.md`), "utf8");
 		if (text.trim().length === 0) throw new Error(`trusted prompt ${name} is empty`);
 		return text;
 	};
+	const contract = read("contract");
+	const exemplar = read("exemplar");
+	const compose = (...parts: string[]) => `${parts.map((p) => p.trimEnd()).join("\n\n")}\n`;
 	return {
-		planner: read("planner"),
+		planner: compose(read("planner"), contract, exemplar),
 		retrieval: read("retrieval"),
-		coder: read("coder"),
-		code_reviewer: read("code_reviewer"),
-		security_reviewer: read("security_reviewer"),
+		coder: compose(read("coder"), contract, exemplar),
+		code_reviewer: compose(read("code_reviewer"), contract),
+		security_reviewer: compose(read("security_reviewer"), contract),
 	};
 }
 
@@ -227,30 +237,57 @@ export function renderSource(sealedDir: string, source: SealedSource, maxBytes: 
 	return out;
 }
 
-export function reviewUser(plan: Plan, revision: string, rendered: string): string {
-	return [
-		`Frozen source revision ${revision}. Review it against the plan and report with submit_findings.`,
-		"Plan (JSON):",
-		JSON.stringify(plan, null, 2),
-		"Files:",
-		rendered,
-	].join("\n\n");
+/**
+ * The reviewers' turn. A repair round's source answers the independent
+ * validator's failure of the round before; the reviewers are told that
+ * failure, so they never ask to undo its fix (DEC-036: the validator's failure
+ * outranks the source contract, the plan and the findings).
+ */
+export function reviewUser(
+	plan: Plan,
+	revision: string,
+	rendered: string,
+	previous?: { failureCode?: string; detail?: string },
+): string {
+	const parts = [
+		`Frozen source revision ${revision}. Review it against the source contract and the plan and report with submit_findings.`,
+	];
+	if (previous?.failureCode)
+		parts.push(
+			`The independent validator failed the previous revision: ${previous.failureCode}${previous.detail ? ` — ${previous.detail}` : ""}. This revision may depart from the plan to fix that failure; such a change is correct and is no finding, and never ask to undo it.`,
+		);
+	parts.push("Plan (JSON):", JSON.stringify(plan, null, 2), "Files:", rendered);
+	return parts.join("\n\n");
 }
 
+/**
+ * The coder's repair turn (DEC-036): the independent validator's failure
+ * first, as what must be fixed and what outranks the findings; then the
+ * reviewers' findings, which never undo that fix or ask for what the source
+ * contract forbids.
+ */
 export function repairUser(
 	findings: Finding[],
 	validator: { failureCode?: string; detail?: string } | undefined,
 	revision: string,
 ): string {
-	const lines = [
-		`Repair round for source revision ${revision}. Change only what these findings require and keep the rest of the source as it is.`,
-	];
-	if (validator?.failureCode)
-		lines.push(`Independent validator: ${validator.failureCode}${validator.detail ? ` — ${validator.detail}` : ""}`);
+	const lines = [`Repair round for source revision ${revision}.`];
+	if (validator?.failureCode) {
+		lines.push(
+			`First fix the independent validator's failure: ${validator.failureCode}${validator.detail ? ` — ${validator.detail}` : ""}`,
+			"It outranks the plan and the findings below: a finding that would undo this fix, or that asks for something the source contract forbids, is void and changes nothing.",
+		);
+		if (findings.length > 0)
+			lines.push("Then the internal reviewers' findings, within the source contract and the plan:");
+	} else if (findings.length > 0)
+		lines.push("The internal reviewers' findings, within the source contract and the plan:");
 	for (const f of findings)
 		lines.push(
 			`- [${f.severity}] ${f.id} ${f.file}${f.line ? `:${f.line}` : ""}: ${f.summary} Remediation: ${f.remediation}`,
 		);
-	lines.push("When the repairs are written, answer with one short sentence.");
+	lines.push(
+		"Change only what the validator's failure and these findings require and keep the rest of the source as it is.",
+		"When the repairs are written, answer with one short sentence.",
+	);
 	return lines.join("\n");
 }

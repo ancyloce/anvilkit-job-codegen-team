@@ -148,10 +148,16 @@ export function reviewerNode(ctx: NodeContext, role: (typeof reviewerRoles)[numb
 		if (!reserved) throw new Error(`${role}: no allowance was reserved for this review round`);
 		const c = callCounter();
 		const rendered = renderSource(result.sealedDir, result.source, deps.config.source.maxReviewBytes);
+		// A repair round answers the validator's failure of the round before (DEC-036).
+		const before = state.validations.filter((v) => v.round === last.round - 1).at(-1)?.result;
+		const previous =
+			before && before.status !== "unavailable" && before.status !== "certified"
+				? { failureCode: before.failureCode, detail: before.detail }
+				: undefined;
 		const { value } = await runNodeSpecialist<Findings>(ctx, "review", last.round, deps.port, {
 			role,
 			systemPrompt: role === "code_reviewer" ? deps.prompts.code_reviewer : deps.prompts.security_reviewer,
-			user: reviewUser(state.plan, last.sourceRevision, rendered),
+			user: reviewUser(state.plan, last.sourceRevision, rendered, previous),
 			tool: tool("submit_findings"),
 			maxOutputTokens: deps.config.roles[role].maxOutputTokens,
 			exposure: budget.perSend,
