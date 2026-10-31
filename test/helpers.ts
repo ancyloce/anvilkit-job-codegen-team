@@ -221,7 +221,10 @@ export function runCoordinator(l: CoordinatorLaunch): Promise<CoordinatorRun> {
 	if (l.workspaceMode !== undefined) spawnSync("chmod", [l.workspaceMode.toString(8), workspace]);
 	for (const f of [
 		"tools.json",
-		...["planner", "retrieval", "coder", "code_reviewer", "security_reviewer"].map((r) => `prompts/${r}.md`),
+		// The five role prompts and the shared source contract and exemplar they are composed with (DEC-036).
+		...["planner", "retrieval", "coder", "code_reviewer", "security_reviewer", "contract", "exemplar"].map(
+			(r) => `prompts/${r}.md`,
+		),
 	])
 		writeFileSync(path.join(agent, "team", f), readFileSync(path.join(packageRoot, "agent", "team", f)));
 	const config = path.join(l.root, "team.yaml");
