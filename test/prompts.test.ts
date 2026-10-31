@@ -323,3 +323,45 @@ describe("the planner holds the route's output bound", () => {
 		expect(config.roles.planner.maxOutputTokens).toBe(config.route.maxTokens);
 	});
 });
+
+// The coder writes one file per response (DEC-037). B1 run 9's coder answered
+// its first write turn with one response that ended at exactly its output cap
+// (4096 tokens, the route bound) and the Proxy ended the call
+// UPSTREAM_TOOL_ARGUMENTS_INVALID: no file was written and the failed call ended
+// the attempt (plan 0005 §11.14). Nothing limited the tool calls in one
+// response, and run 8's largest coder response was 1301 tokens.
+describe("the coder writes one file per response", () => {
+	const prompt = (role: string) =>
+		readFileSync(path.join(packageRoot, "agent", "team", "prompts", `${role}.md`), "utf8");
+
+	it("the coder makes at most one tool call and writes at most one file per response", () => {
+		expect(prompt("coder")).toContain(
+			"Make at most one tool call per response, and write or edit at most one file per response.",
+		);
+	});
+
+	it("the coder is told why: a cut tool call writes nothing and ends the attempt", () => {
+		expect(prompt("coder")).toContain(
+			"A response is cut at its output limit, and a cut tool call writes nothing and ends the attempt.",
+		);
+	});
+
+	it("the coder writes a long file in parts, the write tool first and the edit tool after", () => {
+		expect(prompt("coder")).toContain(
+			"A file longer than about 6000 characters is written in parts, one part per response: write its first part with the write tool, then add each next part with the edit tool, replacing the file's last lines (enough of them to be unique in the file) with those lines followed by the next part.",
+		);
+	});
+
+	it("the one-file rule comes before the write instruction and keeps it", () => {
+		const text = prompt("coder");
+		const rule = text.indexOf("Make at most one tool call per response");
+		const write = text.indexOf("Write each file completely with the write tool");
+		expect(rule).toBeGreaterThanOrEqual(0);
+		expect(write).toBeGreaterThan(rule);
+	});
+
+	it("team.yaml gives the coder route.maxTokens, the bound one response stays under", () => {
+		const config = loadTeamConfig(path.join(packageRoot, "team.yaml"));
+		expect(config.roles.coder.maxOutputTokens).toBe(config.route.maxTokens);
+	});
+});
