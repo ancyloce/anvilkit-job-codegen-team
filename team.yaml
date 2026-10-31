@@ -51,9 +51,13 @@ roles:
 # hold, and the run then ends model_denied, never as a candidate defect.
 aggregate: { maxCalls: 50, exposure: "50000000" }
 # reviews: review rounds (the initial one and after repairs); repairs: the
-# bounded returns to the coder after a repairable validator result.
+# bounded returns to the coder after a repairable validator result. The
+# validator reports one source or build defect per round, so each repair
+# round can fix one more; since DEC-036 the validator's failure outranks the
+# findings, so a further round converges instead of oscillating (B1 runs 7
+# and 8). aggregate.maxCalls still bounds the run.
 reviews: { max: 2 }
-repairs: { max: 2 }
+repairs: { max: 3 }
 # compaction: Pi's automatic summarization (a controlled call like any other).
 compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 8192 }
 # tools: the file tools the Pi coder holds (no shell).
