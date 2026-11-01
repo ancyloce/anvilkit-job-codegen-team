@@ -150,16 +150,30 @@ const rules: Record<string, { states: string[]; enforcedBy: Array<[string, strin
 	// the validator's field-sinks check.
 	C24: {
 		states: [
-			"every text and textarea field set to a hostile value",
+			"every text and textarea field set to each of three hostile values",
 			"the render never throws on it",
 			"a scheme check that keeps relative paths and http:, https:, mailto: and tel: URLs",
 			"only when it matches a fixed pattern",
+			"each select or radio field alone set to each",
+			"each select or radio option opened beside hostile text",
+			"only after it matches one of the field's options",
+			"No field value is rendered with dangerouslySetInnerHTML",
 		],
 		enforcedBy: [
 			["src/validate.ts", '"field-sinks"'],
-			["fixtures/host/ssr.mjs", "the component threw when every text field held"],
+			["src/validate.ts", 'f.type === "select" || f.type === "radio"'],
+			["fixtures/host/ssr.mjs", "`the component threw when "],
+			["fixtures/host/ssr.mjs", '"every text field held"'],
 			["fixtures/host/ssr.mjs", "a text value reaches a URL attribute only after a scheme check"],
 			["fixtures/host/ssr.mjs", "a text value reaches an inline style only after it matches a fixed pattern"],
+			[
+				"fixtures/host/ssr.mjs",
+				"a select or radio value reaches an inline style only after it matches one of the field's options",
+			],
+			["fixtures/host/ssr.mjs", "never through dangerouslySetInnerHTML"],
+			["fixtures/host/ssr.mjs", "a field value never reaches a script"],
+			["fixtures/host/ssr.mjs", "config.fields?.[field]?.options"],
+			["fixtures/host/ssr.mjs", "never through dangerouslySetInnerHTML or srcdoc"],
 		],
 	},
 };
