@@ -145,6 +145,23 @@ const rules: Record<string, { states: string[]; enforcedBy: Array<[string, strin
 		],
 	},
 	C23: { states: ["counterAttribute"], enforcedBy: [["src/source.ts", "counterAttribute"]] },
+	// B1 run 10's security review: a link href without a scheme check and an
+	// unchecked accent value in an inline custom property, certified before
+	// the validator's field-sinks check.
+	C24: {
+		states: [
+			"every text and textarea field set to a hostile value",
+			"the render never throws on it",
+			"a scheme check that keeps relative paths and http:, https:, mailto: and tel: URLs",
+			"only when it matches a fixed pattern",
+		],
+		enforcedBy: [
+			["src/validate.ts", '"field-sinks"'],
+			["fixtures/host/ssr.mjs", "the component threw when every text field held"],
+			["fixtures/host/ssr.mjs", "a text value reaches a URL attribute only after a scheme check"],
+			["fixtures/host/ssr.mjs", "a text value reaches an inline style only after it matches a fixed pattern"],
+		],
+	},
 };
 
 /** The contract's rule lines, by id. */
