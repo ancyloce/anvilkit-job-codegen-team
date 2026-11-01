@@ -20,7 +20,7 @@
 # registry: --build-arg VALIDATOR_REPOSITORY=localhost:5001/anvilkit-job-validator).
 # The digest stays the one below whatever the repository.
 # Pinned 2026-11-01 to the validator the job-images workflow published from
-# anvilkit-job-validator bbe10f0 (release jobs-v0.1.19, manifest SIGNED).
+# anvilkit-job-validator eaf8332 (release jobs-v0.1.21, manifest SIGNED).
 ARG VALIDATOR_REPOSITORY=ghcr.io/ancyloce/anvilkit-job-validator
 
 FROM golang:1.27.3-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c AS supervisor-build
@@ -65,7 +65,7 @@ RUN pnpm run build \
  && pnpm install --frozen-lockfile --prod \
  && node -e 'const Database = require("better-sqlite3"); new Database(":memory:").close()'
 
-FROM ${VALIDATOR_REPOSITORY}@sha256:daa3a502374392055ac8ef499610cf2d7509794bda0385aa988ee4590584d73a
+FROM ${VALIDATOR_REPOSITORY}@sha256:a186686f002b80005654aca30a301e6ae60b3eb2530309040ce1391198e6e5e8
 # Pi's grep tool runs ripgrep. It is Debian trixie's package at an exact
 # version (from the signed archive), and the root-owned Pi agent directory's
 # bin/rg names it: the SDK's tools manager looks in <agent dir>/bin first,
