@@ -440,8 +440,3 @@ export class ControlledModelPort {
 		};
 	}
 }
-
-/** The frames of one recorded call, replayed as the Proxy would (test doubles and evidence readers share it). */
-export function isFinalFrame(f: StreamFrame): boolean {
-	return f.type === "done" || f.type === "error";
-}
