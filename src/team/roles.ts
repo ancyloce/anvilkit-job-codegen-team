@@ -49,7 +49,7 @@ export type RetrievalResult =
 	| { status: "evidence"; evidence: Evidence[] }
 	| { status: "insufficient_evidence"; reason: string };
 
-/** The trusted retrieval port (Knowledge through the sidecar's expert relay, P16); unavailable in this build. */
+/** The trusted retrieval port: Knowledge through the sidecar's Knowledge relay (team/retrieval.ts SidecarRetrieval). */
 export interface RetrievalPort {
 	retrieve(question: string): Promise<RetrievalResult>;
 }

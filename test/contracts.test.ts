@@ -43,7 +43,7 @@ describe("strict JSON (jsonc-parser syntax, duplicate-key policy)", () => {
 			"doc",
 		);
 		expect(v).toEqual({ a: 'q"\\/\b\f\n\r\té', b: { a: 1, c: [{ a: 1 }, { a: 2 }] }, bx: [] });
-		// The parsed value still goes through schema validation as before.
+		// The parsed value then goes through schema validation.
 		expect(
 			validateSchema({ type: "object", required: ["a"], properties: { a: { type: "string" } } }, v),
 		).toBeUndefined();

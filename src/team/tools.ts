@@ -1,9 +1,10 @@
 // The reviewed tools of the team (openapi/model-proxy.yaml ToolDefinition):
-// the structured outputs of the specialists (submit_plan, submit_findings)
-// and the file tools of the Pi coder. The Model Proxy serves a tool only when
-// the route's configuration carries the same name and schema (canonical
-// digest); agent/team/tools.json is the reviewed list the Proxy's route
-// configuration embeds, generated from here and checked for drift.
+// the structured outputs of the specialists (submit_plan, submit_findings,
+// submit_retrieval) and the file tools of the Pi coder. The Model Proxy
+// serves a tool only when the route's configuration carries the same name
+// and schema (canonical digest); agent/team/tools.json is the reviewed list
+// the Proxy's route configuration embeds, generated from here and checked
+// for drift.
 import { canonicalDigest } from "../digest.js";
 import { coderToolNames, coderTools } from "../pi/boundary.js";
 

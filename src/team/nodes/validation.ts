@@ -80,8 +80,8 @@ export function validateNode(ctx: NodeContext): (state: TeamStateType) => Promis
 			failureCode: "failureCode" in res ? res.failureCode : undefined,
 		});
 		// The team's own classification, for display only: the code it goes on
-		// with, or "certified" as the class name; the independent Validator's
-		// verdict arrives later on its own attempt.
+		// with, or the status ("certified", "unavailable") as the class name;
+		// the independent Validator's verdict arrives later on its own attempt.
 		await ctx.report("validate", "completed", last.round, "failureCode" in res ? res.failureCode : res.status);
 		return {
 			validations: [

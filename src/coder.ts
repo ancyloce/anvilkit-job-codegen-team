@@ -75,9 +75,9 @@ export async function runRound(input: RoundInput, outcomeDir: string): Promise<R
 	// The ordinal names the next call; the allowance is what the port's
 	// ledger shows spent (every call identity asked of the relay, once —
 	// a reentry, a replay or a reconciliation of the same identity is not a
-	// second charge). Taking an ordinal spends nothing, so the round's one
-	// allowed call is admitted under ordinal 1 and the second is refused
-	// before a send.
+	// second charge). Taking an ordinal spends nothing, so a round allowed
+	// one call admits it under ordinal 1 and refuses the second before a
+	// send.
 	let ordinal = 0;
 	let failure: Error | undefined;
 	const remaining = (): Allowance => {

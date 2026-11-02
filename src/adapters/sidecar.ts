@@ -1,9 +1,10 @@
 // The access sidecar's routes as the team uses them (DD-03 §5, P09c/P11):
-// the trusted coordinator over trusted.sock (scope, transfers, results, the
-// accepted stage, the controlled model relay) and the Pi candidate over
-// candidate.sock (the controlled model relay, the permitted inputs). Every
-// request opens its own connection, sends one request and closes, so no
-// descriptor is ever delegated and a connection never outlives its request.
+// the trusted coordinator over trusted.sock (scope, transfers, results,
+// progress, the accepted stage of this or a prior attempt, the controlled
+// model relay) and the Pi candidate over candidate.sock (the controlled
+// model relay, the permitted inputs). Every request opens its own
+// connection, sends one request and closes, so no descriptor is ever
+// delegated and a connection never outlives its request.
 // The relay's answer is an event stream of the Model Proxy's frames
 // (openapi/model-proxy.yaml StreamFrame), read with eventsource-parser.
 import http from "node:http";

@@ -9,15 +9,16 @@
 // failure: never certified, never a repair.
 //
 // The chain's build, SSR and browser steps run as the candidate identity
-// (setpriv). In the Job this process is not PID 1: an orphan a step leaves
-// is reparented to the supervisor (the child subreaper, this process's
-// parent), outside the chain's own view of its steps (VAL-05). So once the
-// chain has ended and before anything of its run is read, this process
-// looks for every live process of the step identity below the supervisor
-// from its own read of /proc, stops them as that identity (it has no
-// CAP_KILL) and confirms none is left. A run that left one is not read
-// (OBSERVER_FAILED); a stop that cannot be confirmed ends the attempt
-// without a stage, as an unconfirmed candidate stop does in the supervisor.
+// and its SSR harness under its own (setpriv). In the Job this process is
+// not PID 1: an orphan a step leaves is reparented to the supervisor (the
+// child subreaper, this process's parent), outside the chain's own view of
+// its steps (VAL-05). So once the chain has ended and before anything of
+// its run is read, this process looks for every live process of both step
+// identities below the supervisor from its own read of /proc, stops them as
+// each identity (it has no CAP_KILL) and confirms none is left. A run that
+// left one is not read (OBSERVER_FAILED); a stop that cannot be confirmed
+// ends the attempt without a stage, as an unconfirmed candidate stop does
+// in the supervisor.
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -214,7 +215,7 @@ export class ValidatorCli implements ValidationPort {
 	}
 }
 
-/** The stop of the step identity's processes after a validator run could not be confirmed: nothing proves that none still writes. */
+/** The stop of the step identities' processes after a validator run could not be confirmed: nothing proves that none still writes. */
 export class CandidateStopNotEstablishedError extends CandidateRoundRefusedError {
 	constructor(detail: string) {
 		super("STOP_NOT_ESTABLISHED", detail, true);

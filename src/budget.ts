@@ -10,8 +10,8 @@
 // an aggregate that the operation's allocation covers is never exceeded by
 // the team's own sends, and allowances handed to roles that send
 // concurrently never let two sends draw on one reserved unit. Declaring
-// less than Control reserves (the earlier per-role exposurePerCall) let the
-// team's own accounting fund sends Control would deny.
+// less than Control reserves would let the team's own accounting fund sends
+// Control would deny.
 
 import type { Money } from "./adapters/sidecar.js";
 import type { Role } from "./port/model.js";

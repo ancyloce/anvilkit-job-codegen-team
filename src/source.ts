@@ -171,7 +171,7 @@ export function readTree(root: string, limits: SourceLimits, base?: string): Map
 	return files;
 }
 
-/** Copies a tree read by readTree into an immutable copy (root-owned, 0500 directories, 0400 files). */
+/** Copies a tree read by readTree into an immutable copy (root-owned, 0700 directories, 0400 files). */
 export function writeTree(dest: string, files: Map<string, Buffer>): void {
 	mkdirSync(dest, { recursive: true, mode: 0o700 });
 	for (const p of [...files.keys()].sort()) {

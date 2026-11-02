@@ -10,7 +10,8 @@
 // (/opt/pi-agent, its bin/rg the image's pinned ripgrep): the supervisor
 // gives the candidate a fixed environment (PATH, HOME and the round's
 // paths only), so the coder pins these itself. Entrypoints import it
-// first (coder.ts); the Pi modules of this package import it too.
+// first (coder.ts); pi/boundary.ts and pi/session.ts import it too
+// (pi/resources.ts is loaded only through pi/session.ts).
 
 /** The image's root-owned Pi agent directory (Dockerfile): bin/rg is the pinned ripgrep. */
 export const piAgentDir = "/opt/pi-agent";

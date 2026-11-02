@@ -95,7 +95,8 @@ export async function runTeam(
 	trustedDir(path.join(workspace, "validation"));
 	// P2.4 (TEAM-03): size the run by the operation's unreserved budget
 	// before the first send: concurrent sends the headroom cannot hold are
-	// serialized at the port, and the aggregate never exceeds it.
+	// serialized at the port, and a headroom that funds no send ends the run
+	// before its first send (budget.ts preflight).
 	const plan = teamBudgetPlan(config, scope.budgetHeadroom);
 	const budget = new TeamBudget(plan.limits);
 	if (plan.concurrentSends < config.parallelism)
