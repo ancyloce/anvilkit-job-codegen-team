@@ -162,7 +162,7 @@ export async function runTeam(
 			prompts,
 			port,
 			executor,
-			retrieval: new SidecarRetrieval(inputs.trustedSocket, {
+			retrieval: new SidecarRetrieval(inputs.trustedSocket, inputs.peerToken, {
 				snapshotId: start.brief.knowledgeSnapshotId,
 				retrievalProfileId: config.knowledge?.retrievalProfileId,
 				maxContextItems: config.knowledge?.maxContextItems,

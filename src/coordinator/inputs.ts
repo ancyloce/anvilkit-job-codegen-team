@@ -8,6 +8,7 @@
 // this build is sealed and proven under.
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { assertPeerToken } from "../adapters/peer.js";
 import { type Scope, SidecarClient } from "../adapters/sidecar.js";
 import { loadTeamConfig, type TeamConfig } from "../config.js";
 import { parseStrictObject, validateAgainst, validateSchema } from "../contracts.js";
@@ -27,6 +28,8 @@ export const env = {
 	verdict: "ANVILKIT_VERDICT_DIR",
 	trustedSocket: "ANVILKIT_TRUSTED_SOCKET",
 	candidateSocket: "ANVILKIT_CANDIDATE_SOCKET",
+	/** The trusted socket's peer token (DEC-045 B2): the supervisor derives it from the launch secret; this process never sees the secret. */
+	peerToken: "ANVILKIT_PEER_TOKEN",
 	envelope: "ANVILKIT_LAUNCH_ENVELOPE",
 	inputDir: "ANVILKIT_INPUT_DIR",
 	observer: "ANVILKIT_OBSERVER_IDENTITY",
@@ -189,6 +192,8 @@ export interface CoordinatorInputs {
 	inputDir: string;
 	trustedSocket: string;
 	candidateSocket: string;
+	/** The trusted socket's peer token; the candidate's is the supervisor's to hand to the coder, never this process's. */
+	peerToken: string;
 	observer: string;
 	sidecar: SidecarClient;
 	scope: Scope;
@@ -217,7 +222,8 @@ export async function prepareInputs(verdictDir: string): Promise<CoordinatorInpu
 	const workspace = required(env.workspace);
 	const trustedSocket = required(env.trustedSocket);
 	const candidateSocket = required(env.candidateSocket);
-	const sidecar = new SidecarClient(trustedSocket);
+	const peerToken = assertPeerToken(required(env.peerToken), env.peerToken);
+	const sidecar = new SidecarClient(trustedSocket, peerToken);
 	const { scope } = await sidecar.scope();
 	if (
 		scope.attemptId !== envelope.attemptId ||
@@ -242,6 +248,7 @@ export async function prepareInputs(verdictDir: string): Promise<CoordinatorInpu
 		inputDir: process.env[env.inputDir] ?? path.join(workspace, "input"),
 		trustedSocket,
 		candidateSocket,
+		peerToken,
 		observer: process.env[env.observer] ?? "anvilkit-codegen-team",
 		sidecar,
 		scope,
