@@ -121,7 +121,7 @@ describe("TeamRunner", () => {
 		prefix = "att_team",
 		dirs: { workspace?: string; sealDir?: string } = {},
 	): TeamDeps {
-		const client = new SidecarClient(sidecar.trustedSocket);
+		const client = new SidecarClient(sidecar.trustedSocket, sidecar.trustedToken);
 		const deadline = over.deadline ?? attemptDeadline;
 		const port = new ControlledModelPort({
 			relay: (r, o) => client.relay(r, o),
@@ -153,7 +153,7 @@ describe("TeamRunner", () => {
 			config: cfg,
 			prompts: loadPrompts(agentDir),
 			port,
-			executor: new CodingExecutor(ex, localRunner()),
+			executor: new CodingExecutor(ex, localRunner(sidecar.candidateToken)),
 			retrieval: insufficient,
 			progress: client,
 			deadline,
@@ -241,7 +241,7 @@ describe("TeamRunner", () => {
 		const plan = teamBudgetPlan(config, headroom);
 		expect(plan.concurrentSends).toBe(1);
 		const base = deps({ validation: new ScriptedValidation([certified()]) }, config, "att_serial");
-		const client = new SidecarClient(sidecar.trustedSocket);
+		const client = new SidecarClient(sidecar.trustedSocket, sidecar.trustedToken);
 		const d: TeamDeps = {
 			...base,
 			budgetHeadroom: headroom,

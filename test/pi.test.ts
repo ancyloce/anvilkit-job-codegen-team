@@ -47,7 +47,7 @@ describe("Pi over the ControlledModelPort", () => {
 				},
 			}),
 		);
-		const client = new SidecarClient(sidecar.candidateSocket);
+		const client = new SidecarClient(sidecar.candidateSocket, sidecar.candidateToken);
 		port = new ControlledModelPort({
 			relay: (r, o) => client.relay(r, o),
 			routeId: "controlled-openai-v1",

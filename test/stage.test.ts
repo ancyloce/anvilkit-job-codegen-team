@@ -66,7 +66,7 @@ describe("StageStore", () => {
 	function store(dir = path.join(root, "stage")) {
 		return new StageStore({
 			dir,
-			sidecar: new SidecarClient(sidecar.trustedSocket),
+			sidecar: new SidecarClient(sidecar.trustedSocket, sidecar.trustedToken),
 			identity,
 			teamProfileDigest: profileDigest,
 			observerIdentity: "anvilkit-codegen-team",
@@ -288,7 +288,7 @@ describe("StageStore", () => {
 		// a stage sealed under another team profile
 		const other = new StageStore({
 			dir,
-			sidecar: new SidecarClient(sidecar.trustedSocket),
+			sidecar: new SidecarClient(sidecar.trustedSocket, sidecar.trustedToken),
 			identity,
 			teamProfileDigest: sha256("other-profile"),
 			observerIdentity: "x",
@@ -351,7 +351,7 @@ describe("StageStore", () => {
 	it("a partial upload never becomes an accepted stage: a transfer that verifies other bytes stops the seal before any result", async () => {
 		const round = sealedRound();
 		// The sidecar double finalizes what it receives; the store compares the transfer's verified digest with the sealed archive.
-		const client = new SidecarClient(sidecar.trustedSocket);
+		const client = new SidecarClient(sidecar.trustedSocket, sidecar.trustedToken);
 		const tampered = {
 			...client,
 			upload: async (cls: string, mt: string, body: Buffer) => ({
@@ -384,7 +384,7 @@ describe("StageStore", () => {
 		const refusing = new FakeSidecar("stage-refuse");
 		await refusing.start();
 		try {
-			const c = new SidecarClient(refusing.trustedSocket);
+			const c = new SidecarClient(refusing.trustedSocket, refusing.trustedToken);
 			let uploads = 0;
 			const guarded = {
 				...c,

@@ -388,7 +388,7 @@ describe("a repair launch repairs the prior source as the coder's own copy (P0.8
 	});
 
 	it("the coder (the test's own user) edits its copy of the prior tree and the sealed stage binds the new revision", async () => {
-		const { ownCss } = await repairLaunch(root, sidecar, localRunner());
+		const { ownCss } = await repairLaunch(root, sidecar, localRunner(sidecar.candidateToken));
 		expect(readFileSync(ownCss, "utf8")).toContain("/* repaired */");
 	});
 });
@@ -411,9 +411,8 @@ describe.skipIf(rootSkip !== "")("a repair launch under the real UID split (root
 	beforeEach(async () => {
 		// Under /tmp, not the caller's TMPDIR: the candidate identity connects to
 		// the candidate socket and traverses the launch's tree.
-		sidecar = new FakeSidecar("prior-uid", "/tmp");
+		sidecar = new FakeSidecar("prior-uid");
 		await sidecar.start();
-		chmodSync(sidecar.candidateSocket, 0o777);
 		root = mkdtempSync(path.join("/tmp", "prior-uid-"));
 		chmodSync(root, 0o755);
 	});
@@ -426,7 +425,7 @@ describe.skipIf(rootSkip !== "")("a repair launch under the real UID split (root
 		const stage = path.join(root, "stage");
 		mkdirSync(stage, { mode: 0o755 });
 		const workspace = path.join(root, "workspace");
-		const coder = uidRunner({ stage, home: path.join(workspace, "w") });
+		const coder = uidRunner({ stage, home: path.join(workspace, "w"), candidateToken: sidecar.candidateToken });
 		// The workspace is an emptyDir (world-writable): the coder creates and owns w/.
 		const { ownCss } = await repairLaunch(root, sidecar, coder, 0o777);
 		expect(readFileSync(ownCss, "utf8")).toContain("/* repaired */");

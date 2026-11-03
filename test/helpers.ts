@@ -9,7 +9,7 @@ import path from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import type { RelayRequest } from "../src/adapters/sidecar.js";
-import { roundDirEnv } from "../src/coder.js";
+import { peerTokenEnv, roundDirEnv } from "../src/coder.js";
 import { sha256 } from "../src/digest.js";
 import type { CandidateRunner, CandidateRunReport } from "../src/executor.js";
 import type { TeamResult } from "../src/protocol.js";
@@ -27,8 +27,12 @@ export const validatorPackage =
 	process.env.ANVILKIT_VALIDATOR_PACKAGE ?? path.resolve(here, "..", "..", "..", "validator");
 export const heroFixture = path.join(validatorPackage, "fixtures", "component", "hero");
 
-/** The coder as a child process of the test (same user): what the Go supervisor does through its trampoline as UID 10001. */
-export function localRunner(): CandidateRunner {
+/**
+ * The coder as a child process of the test (same user): what the Go
+ * supervisor does through its trampoline as UID 10001, handing the coder
+ * the candidate socket's peer token in its environment (DEC-045 B2).
+ */
+export function localRunner(candidateToken: string): CandidateRunner {
 	const src = path.resolve(here, "..", "src", "coder.ts");
 	const dist = path.resolve(here, "..", "dist", "coder.js");
 	const argv = existsSync(dist) ? [dist] : ["--import", "tsx", src];
@@ -37,7 +41,12 @@ export function localRunner(): CandidateRunner {
 			new Promise((resolve, reject) => {
 				const startedAt = new Date().toISOString();
 				const child = spawn(process.execPath, argv, {
-					env: { PATH: process.env.PATH ?? "", HOME: req.roundDir, [roundDirEnv]: req.roundDir },
+					env: {
+						PATH: process.env.PATH ?? "",
+						HOME: req.roundDir,
+						[roundDirEnv]: req.roundDir,
+						[peerTokenEnv]: candidateToken,
+					},
 					stdio: ["ignore", "pipe", "pipe"],
 					signal,
 				});
@@ -90,7 +99,13 @@ export const rootTestsRequired = !!process.env.ANVILKIT_REQUIRE_ROOT_TESTS;
  * world-traversable stage in its own private mount namespace; nothing on
  * the host changes.
  */
-export function uidRunner(o: { stage: string; home: string; uid?: number; gid?: number }): CandidateRunner {
+export function uidRunner(o: {
+	stage: string;
+	home: string;
+	candidateToken: string;
+	uid?: number;
+	gid?: number;
+}): CandidateRunner {
 	const team = path.join(o.stage, "team");
 	const node = path.join(o.stage, "node");
 	for (const d of [team, node]) mkdirSync(d, { recursive: true, mode: 0o755 });
@@ -112,7 +127,12 @@ export function uidRunner(o: { stage: string; home: string; uid?: number; gid?: 
 					"unshare",
 					["--mount", "--propagation", "private", "--", "/bin/sh", "-c", script, "sh", ...args],
 					{
-						env: { PATH: "/usr/local/bin:/usr/bin:/bin", HOME: o.home, [roundDirEnv]: req.roundDir },
+						env: {
+							PATH: "/usr/local/bin:/usr/bin:/bin",
+							HOME: o.home,
+							[roundDirEnv]: req.roundDir,
+							[peerTokenEnv]: o.candidateToken,
+						},
 						stdio: ["ignore", "pipe", "pipe"],
 						signal,
 					},
@@ -263,6 +283,7 @@ export function runCoordinator(l: CoordinatorLaunch): Promise<CoordinatorRun> {
 			ANVILKIT_INPUT_DIR: input,
 			ANVILKIT_TRUSTED_SOCKET: l.sidecar.trustedSocket,
 			ANVILKIT_CANDIDATE_SOCKET: l.sidecar.candidateSocket,
+			ANVILKIT_PEER_TOKEN: l.sidecar.trustedToken,
 			ANVILKIT_LAUNCH_ENVELOPE: JSON.stringify(envelope),
 			ANVILKIT_OBSERVER_IDENTITY: "anvilkit-codegen-team",
 			...(process.env.ANVILKIT_CODEGEN_TEAM_CONTRACTS_DIR

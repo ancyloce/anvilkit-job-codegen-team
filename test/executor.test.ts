@@ -62,7 +62,7 @@ describe("CodingExecutor", () => {
 
 	it("one round: the coder writes the complete source through controlled calls; the seal records the validator's manifest digest", async () => {
 		heroScript(sidecar);
-		const ex = new CodingExecutor(config(), localRunner());
+		const ex = new CodingExecutor(config(), localRunner(sidecar.candidateToken));
 		const r = await ex.round({
 			round: 1,
 			kind: "code",
@@ -92,7 +92,7 @@ describe("CodingExecutor", () => {
 
 	it("a repair round continues the sealed session and the sealed source; a drifted workspace source is refused", async () => {
 		heroScript(sidecar);
-		const ex = new CodingExecutor(config(), localRunner());
+		const ex = new CodingExecutor(config(), localRunner(sidecar.candidateToken));
 		const first = await ex.round({
 			round: 1,
 			kind: "code",
@@ -152,7 +152,7 @@ describe("CodingExecutor", () => {
 
 	it("an allowance of one call admits exactly one: the ordinal is not the spend, the second call is refused before a send", async () => {
 		heroScript(sidecar);
-		const ex = new CodingExecutor(config(), localRunner());
+		const ex = new CodingExecutor(config(), localRunner(sidecar.candidateToken));
 		const one = { ...remaining(), calls: 1 };
 		const r = await ex.round({ round: 1, kind: "code", prompt: "Implement.", sourceRevision: "1", remaining: one });
 		// The first call was admitted under ordinal 1 and wrote the first file; Pi's follow-up call after the tool
@@ -192,7 +192,7 @@ describe("CodingExecutor", () => {
 
 	it("no two source writers: a second round while one runs is refused", async () => {
 		sidecar.script = () => ({ text: ["slow"], behaviour: "hang" });
-		const ex = new CodingExecutor(config(), localRunner());
+		const ex = new CodingExecutor(config(), localRunner(sidecar.candidateToken));
 		const first = ex.round({
 			round: 1,
 			kind: "code",
@@ -212,7 +212,7 @@ describe("CodingExecutor", () => {
 
 	it("a refused call ends the round as call_failed with its code; links and escapes in the source are refused at the seal", async () => {
 		sidecar.script = () => ({ behaviour: "refuse", refuseCode: "BUDGET_EXHAUSTED", refuseStatus: 429 });
-		const ex = new CodingExecutor(config(), localRunner());
+		const ex = new CodingExecutor(config(), localRunner(sidecar.candidateToken));
 		mkdirSync(path.join(workspace, "w", "source"), { recursive: true });
 		writeFileSync(path.join(workspace, "w", "source", "a.txt"), "a");
 		const r = await ex.round({
@@ -227,7 +227,10 @@ describe("CodingExecutor", () => {
 		expect(r.outcome?.failure).toBe("refused");
 		expect(r.report.exit).toBe(1);
 		expect(sidecar.totalSends()).toBe(0);
-		const ex2 = new CodingExecutor({ ...config(), sealDir: mkdtempSync(path.join(tmpdir(), "seal2-")) }, localRunner());
+		const ex2 = new CodingExecutor(
+			{ ...config(), sealDir: mkdtempSync(path.join(tmpdir(), "seal2-")) },
+			localRunner(sidecar.candidateToken),
+		);
 		const { symlinkSync } = await import("node:fs");
 		symlinkSync("/etc/hostname", path.join(workspace, "w", "source", "link.txt"));
 		const r2 = await ex2.round({
@@ -250,7 +253,7 @@ describe("CodingExecutor", () => {
 		// candidate process of the same identity could plant between rounds).
 		symlinkSync(outside, path.join(workspace, "w", "source"));
 		heroScript(sidecar);
-		const ex = new CodingExecutor(config(), localRunner());
+		const ex = new CodingExecutor(config(), localRunner(sidecar.candidateToken));
 		const r = await ex.round({
 			round: 1,
 			kind: "code",

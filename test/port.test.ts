@@ -28,7 +28,7 @@ describe("ControlledModelPort", () => {
 	beforeEach(async () => {
 		sidecar = new FakeSidecar("port");
 		await sidecar.start();
-		const client = new SidecarClient(sidecar.trustedSocket);
+		const client = new SidecarClient(sidecar.trustedSocket, sidecar.trustedToken);
 		port = new ControlledModelPort({
 			relay: (req, o) => client.relay(req, o),
 			routeId: "controlled-openai-v1",
@@ -114,7 +114,7 @@ describe("ControlledModelPort", () => {
 		expect(port.spent("planner")).toEqual({ calls: 1, exposure: 20000n });
 		// Definite outcomes on a port with nothing unreconciled.
 		const other = new ControlledModelPort({
-			relay: (req, o) => new SidecarClient(sidecar.trustedSocket).relay(req, o),
+			relay: (req, o) => new SidecarClient(sidecar.trustedSocket, sidecar.trustedToken).relay(req, o),
 			routeId: "controlled-openai-v1",
 			deadline: new Date(Date.now() + 60_000),
 			callIdPrefix: "att_team",
@@ -184,7 +184,7 @@ describe("ControlledModelPort", () => {
 	it("a call queued for a slot is fenced again before its send: an identity that became unknown meanwhile refuses it, and the original identity reenters without a send", async () => {
 		sidecar.script = () => ({ text: ["slow"], behaviour: "hang" });
 		const one = new ControlledModelPort({
-			relay: (req, o) => new SidecarClient(sidecar.trustedSocket).relay(req, o),
+			relay: (req, o) => new SidecarClient(sidecar.trustedSocket, sidecar.trustedToken).relay(req, o),
 			routeId: "controlled-openai-v1",
 			deadline: new Date(Date.now() + 60_000),
 			callIdPrefix: "att_team",
@@ -217,7 +217,7 @@ describe("ControlledModelPort", () => {
 		sidecar.script = () => ({ text: ["slow"], behaviour: "hang" });
 		let clock = Date.now();
 		const one = new ControlledModelPort({
-			relay: (req, o) => new SidecarClient(sidecar.trustedSocket).relay(req, o),
+			relay: (req, o) => new SidecarClient(sidecar.trustedSocket, sidecar.trustedToken).relay(req, o),
 			routeId: "controlled-openai-v1",
 			deadline: new Date(clock + 10_000),
 			callIdPrefix: "att_team",

@@ -87,7 +87,7 @@ describe("coordinator", () => {
 	});
 
 	it("without an independent validator the run is never certified and never repaired; its stage records that", async () => {
-		const coder = localRunner();
+		const coder = localRunner(sidecar.candidateToken);
 		const r = await run(async (req) =>
 			candidateEnded(req, await coder.run({ round: req.round as number, roundDir: req.roundDir as string })),
 		);
@@ -143,7 +143,7 @@ describe("coordinator", () => {
 		expect(disagree.result.failureCode).toBe("IDENTITY_MISMATCH");
 		expect(disagree.result.error).toMatch(/sourceRevision/);
 		// The envelope's component alone states the revision the coder writes.
-		const coder = localRunner();
+		const coder = localRunner(sidecar.candidateToken);
 		const bound = await run(
 			async (req) =>
 				candidateEnded(req, await coder.run({ round: req.round as number, roundDir: req.roundDir as string })),

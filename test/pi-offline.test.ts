@@ -24,7 +24,7 @@ import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { RelayRequest } from "../src/adapters/sidecar.js";
 import type { Allowance } from "../src/budget.js";
-import { roundDirEnv } from "../src/coder.js";
+import { peerTokenEnv, roundDirEnv } from "../src/coder.js";
 import { type CandidateRunner, CodingExecutor } from "../src/executor.js";
 import { FakeSidecar, type Matcher } from "./doubles.js";
 import { packageRoot } from "./helpers.js";
@@ -114,7 +114,13 @@ describe("Pi's grep tool runs the image's ripgrep, offline (AC5)", () => {
 						process.execPath,
 						["--import", pathToFileURL(path.join(root, "intercept.mjs")).href, ...entry],
 						{
-							env: { PATH: pathEnv, HOME: home, [roundDirEnv]: req.roundDir, ANVILKIT_TEST_NET_LOG: netLog },
+							env: {
+								PATH: pathEnv,
+								HOME: home,
+								[roundDirEnv]: req.roundDir,
+								[peerTokenEnv]: sidecar.candidateToken,
+								ANVILKIT_TEST_NET_LOG: netLog,
+							},
 							stdio: ["ignore", "pipe", "pipe"],
 						},
 					);

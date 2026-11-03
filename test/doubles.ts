@@ -5,12 +5,23 @@
 // the same identity conflict, and scripted behaviours cut, hang, refuse or
 // end unknown. Nothing here is a provider, a Proxy or Control: it exercises
 // the team's own mechanics; the integration scenarios use the real chain.
-import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+// DEC-045 B2: the double binds two abstract-namespace sockets unique to the
+// instance, draws a launch secret, derives the trusted and candidate tokens
+// (exposed for the clients under test), applies the sidecar's guard order
+// (nonce, then token) and sets the sidecar proof on every answer after it.
+import { createHash, randomBytes } from "node:crypto";
 import http from "node:http";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import { encode } from "eventsource-encoder";
+import {
+	hexEqual,
+	isNonce,
+	peerNonceHeader,
+	peerToken,
+	peerTokenHeader,
+	sidecarProof,
+	sidecarProofHeader,
+	socketPathOf,
+} from "../src/adapters/peer.js";
 import type { AcceptedStage, RelayRequest, StreamFrame, Usage } from "../src/adapters/sidecar.js";
 
 export interface ScriptedCall {
@@ -45,9 +56,14 @@ export function sha(data: string | Buffer): string {
 }
 
 export class FakeSidecar {
-	readonly dir: string;
+	/** The abstract-namespace names in the "@" form the clients take. */
 	readonly trustedSocket: string;
 	readonly candidateSocket: string;
+	/** The tokens the clients under test are handed (the trusted one by the supervisor, the candidate one by the supervisor to the coder). */
+	readonly trustedToken: string;
+	readonly candidateToken: string;
+	/** Guard refusals in arrival order (nonce or token), for the tests of the binding. */
+	readonly refused: Array<{ kind: "trusted" | "candidate"; code: string }> = [];
 	readonly records = new Map<string, Record_>();
 	readonly requests: RelayRequest[] = [];
 	readonly transfers: Array<{
@@ -94,12 +110,14 @@ export class FakeSidecar {
 	/** Refuse everything on the trusted socket with this code (STALE_EXECUTION etc.) when set. */
 	trustedRefusal: { status: number; code: string } | undefined;
 
-	/** base: where the socket directory goes (a world-traversable one when a UID 10001 coder connects). */
-	constructor(name = "fake-sidecar", base = tmpdir()) {
-		this.dir = path.join(base, `${name}-${process.pid}-${Math.random().toString(16).slice(2, 8)}`);
-		mkdirSync(this.dir, { recursive: true });
-		this.trustedSocket = path.join(this.dir, "trusted.sock");
-		this.candidateSocket = path.join(this.dir, "candidate.sock");
+	/** name: a label in the abstract names (unique per instance by pid and a random suffix; no directory, no file). */
+	constructor(name = "fake-sidecar") {
+		const ns = `@anvilkit-test/${name}-${process.pid}-${randomBytes(4).toString("hex")}`;
+		this.trustedSocket = `${ns}/trusted`;
+		this.candidateSocket = `${ns}/candidate`;
+		const secret = randomBytes(32).toString("hex");
+		this.trustedToken = peerToken(secret, "trusted");
+		this.candidateToken = peerToken(secret, "candidate");
 	}
 
 	sends(callId: string): number {
@@ -122,10 +140,9 @@ export class FakeSidecar {
 			[this.trustedSocket, "trusted"],
 			[this.candidateSocket, "candidate"],
 		] as const) {
-			if (existsSync(socket)) rmSync(socket);
-			const srv = http.createServer((req, res) => this.handle(kind, req, res));
+			const srv = http.createServer((req, res) => this.guarded(kind, req, res));
 			srv.keepAliveTimeout = 0;
-			await new Promise<void>((resolve) => srv.listen(socket, resolve));
+			await new Promise<void>((resolve) => srv.listen(socketPathOf(socket), resolve));
 			this.servers.push(srv);
 		}
 	}
@@ -134,7 +151,30 @@ export class FakeSidecar {
 		this.release();
 		for (const s of this.servers) await new Promise<void>((resolve) => s.close(() => resolve()));
 		this.servers = [];
-		rmSync(this.dir, { recursive: true, force: true });
+	}
+
+	/**
+	 * The sidecar's guard (peer UID aside, which a same-user double cannot
+	 * check): the nonce first (400 PEER_NONCE_INVALID), then the socket's
+	 * token under a constant-time compare (403 PEER_TOKEN_MISMATCH); a refusal
+	 * carries no proof, every later answer of the request carries the proof.
+	 */
+	private guarded(kind: "trusted" | "candidate", req: http.IncomingMessage, res: http.ServerResponse): undefined {
+		const nonce = req.headers[peerNonceHeader];
+		if (!isNonce(nonce)) {
+			this.refused.push({ kind, code: "PEER_NONCE_INVALID" });
+			req.resume();
+			return this.json(res, 400, { code: "PEER_NONCE_INVALID" });
+		}
+		const expected = kind === "trusted" ? this.trustedToken : this.candidateToken;
+		const token = req.headers[peerTokenHeader];
+		if (typeof token !== "string" || !hexEqual(token, expected)) {
+			this.refused.push({ kind, code: "PEER_TOKEN_MISMATCH" });
+			req.resume();
+			return this.json(res, 403, { code: "PEER_TOKEN_MISMATCH" });
+		}
+		res.setHeader(sidecarProofHeader, sidecarProof(expected, nonce));
+		return this.handle(kind, req, res);
 	}
 
 	private json(res: http.ServerResponse, status: number, body: unknown): undefined {
