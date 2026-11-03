@@ -5,7 +5,9 @@
 // coordinator wrote: the frozen plan and brief as its one turn, the exact
 // source revision, the trusted system prompt, the file tools bound to the
 // source directory, and the access sidecar's candidate socket as its only
-// transport. It discovers nothing: no AGENTS.md, .pi, SYSTEM.md, extension,
+// transport, with the candidate peer token the supervisor set in its
+// environment (DEC-045 B2; the round input never carries a token). It
+// discovers nothing: no AGENTS.md, .pi, SYSTEM.md, extension,
 // skill or settings file of the workspace is loaded, on a new session, a
 // continued one or after compaction. Everything it writes is data for the
 // trusted side; its exit code certifies nothing. Pi's tool environment is
@@ -14,6 +16,7 @@
 import "./pi/environment.js";
 import { copyFileSync, cpSync, lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { assertPeerToken } from "./adapters/peer.js";
 import { SidecarClient } from "./adapters/sidecar.js";
 import { type Allowance, moneyAmount } from "./budget.js";
 import { type CoderToolName, coderTools } from "./pi/boundary.js";
@@ -31,11 +34,13 @@ import { type CallFailure, parseRoundInput, type RoundInput, type RoundOutcome }
 import { assertRealBelow } from "./source.js";
 
 export const roundDirEnv = "ANVILKIT_ROUND_DIR";
+/** The candidate socket's peer token, set by the supervisor for the candidate alone. */
+export const peerTokenEnv = "ANVILKIT_PEER_TOKEN";
 export const roundInputFile = "round.json";
 export const roundOutcomeFile = "outcome.json";
 
-/** Runs one round; returns the outcome written for the trusted side. */
-export async function runRound(input: RoundInput, outcomeDir: string): Promise<RoundOutcome> {
+/** Runs one round with this process's peer token; returns the outcome written for the trusted side. */
+export async function runRound(input: RoundInput, outcomeDir: string, peerToken: string): Promise<RoundOutcome> {
 	// A repair launch's first round repairs the prior attempt's proven
 	// source: the trusted prior tree is read-only to this identity, so the
 	// round's source directory is replaced by this identity's own copy of it
@@ -62,7 +67,7 @@ export async function runRound(input: RoundInput, outcomeDir: string): Promise<R
 	// elsewhere, and the trusted seal would refuse the round anyway.
 	assertRealBelow(input.workspace, input.sourceDir, "source directory");
 	assertRealBelow(input.workspace, input.sessionDir, "session directory");
-	const client = new SidecarClient(input.socket);
+	const client = new SidecarClient(input.socket, peerToken);
 	const deadline = new Date(input.deadline);
 	const port = new ControlledModelPort({
 		relay: (req, o) => client.relay(req, o),
@@ -167,8 +172,15 @@ async function main(): Promise<number> {
 		process.stderr.write(`coder: ${roundDirEnv} is required\n`);
 		return 2;
 	}
+	let peerToken: string;
+	try {
+		peerToken = assertPeerToken(process.env[peerTokenEnv], peerTokenEnv);
+	} catch (err) {
+		process.stderr.write(`coder: ${(err as Error).message}\n`);
+		return 2;
+	}
 	const input = parseRoundInput(readFileSync(path.join(roundDir, roundInputFile), "utf8"));
-	const outcome = await runRound(input, path.join(input.sessionDir, "..", "rounds", String(input.round)));
+	const outcome = await runRound(input, path.join(input.sessionDir, "..", "rounds", String(input.round)), peerToken);
 	process.stdout.write(`coder: round ${input.round} ${outcome.ended} after ${outcome.calls} call(s)\n`);
 	return outcome.ended === "completed" ? 0 : 1;
 }
