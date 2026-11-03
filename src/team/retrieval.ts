@@ -5,7 +5,10 @@
 // (Knowledge decides readability for that actor and asks Control's
 // commercial authorization). A brief without a snapshot, a refusal or an
 // unreachable relay is insufficient evidence — never a citation.
+// DEC-045 B2: the abstract-namespace trusted socket, the coordinator's peer
+// token and nonce on the request, the sidecar's proof on the answer.
 import http from "node:http";
+import { assertPeerToken, peerHeaders, proofValid, socketPathOf } from "../adapters/peer.js";
 import type { Evidence, RetrievalPort, RetrievalResult } from "./roles.js";
 
 export interface RetrievalBinding {
@@ -22,11 +25,16 @@ interface SearchItem {
 }
 
 export class SidecarRetrieval implements RetrievalPort {
+	private readonly token: string;
+
 	constructor(
 		private readonly socketPath: string,
+		token: string,
 		private readonly binding: RetrievalBinding = {},
 		private readonly timeoutMs = 30_000,
-	) {}
+	) {
+		this.token = assertPeerToken(token, "the retrieval port's peer token");
+	}
 
 	retrieve(question: string): Promise<RetrievalResult> {
 		const { snapshotId, retrievalProfileId } = this.binding;
@@ -43,17 +51,31 @@ export class SidecarRetrieval implements RetrievalPort {
 				retrievalProfileId,
 			}),
 		);
+		const peer = peerHeaders(this.token);
 		return new Promise((resolve) => {
 			const req = http.request(
 				{
-					socketPath: this.socketPath,
+					socketPath: socketPathOf(this.socketPath),
 					method: "POST",
 					path: "/v1/knowledge/searches",
-					headers: { "content-type": "application/json", "content-length": body.length, connection: "close" },
+					headers: {
+						"content-type": "application/json",
+						"content-length": body.length,
+						...peer.headers,
+						connection: "close",
+					},
 					agent: false,
 					timeout: this.timeoutMs,
 				},
 				(res) => {
+					if (!proofValid(this.token, peer.nonce, res.headers["anvilkit-sidecar-proof"])) {
+						res.destroy();
+						resolve({
+							status: "insufficient_evidence",
+							reason: "the knowledge relay's answer carries no valid sidecar proof",
+						});
+						return;
+					}
 					const chunks: Buffer[] = [];
 					res.on("data", (c: Buffer) => chunks.push(c));
 					res.on("end", () => {
