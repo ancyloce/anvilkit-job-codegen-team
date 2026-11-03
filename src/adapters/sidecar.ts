@@ -7,9 +7,13 @@
 // delegated and a connection never outlives its request.
 // The relay's answer is an event stream of the Model Proxy's frames
 // (openapi/model-proxy.yaml StreamFrame), read with eventsource-parser.
+// DEC-045 B2: the sockets are abstract-namespace names ("@anvilkit/..."),
+// every request carries this client's peer token and a fresh nonce, and
+// every answer must carry the sidecar's proof over that nonce (peer.ts).
 import http from "node:http";
 import { createParser } from "eventsource-parser";
 import { parseStrictObject } from "../contracts.js";
+import { assertPeerToken, peerHeaders, proofValid, SidecarProofError, socketPathOf } from "./peer.js";
 
 /** One message of the model call history (openapi/model-proxy.yaml Message). */
 export interface RelayMessage {
@@ -181,9 +185,15 @@ export interface RelayResult {
 	final?: StreamFrame;
 }
 
-/** One HTTP request over a unix socket; the answer's status, headers and body (bounded). */
+/**
+ * One HTTP request over a unix socket with the peer token and a fresh nonce;
+ * the answer's status, headers and body (bounded). An answer without the
+ * sidecar's proof over the nonce is discarded (SidecarProofError), whatever
+ * its status.
+ */
 async function request(
 	socketPath: string,
+	token: string,
 	method: string,
 	path: string,
 	headers: Record<string, string>,
@@ -191,10 +201,23 @@ async function request(
 	timeoutMs: number,
 	maxBody: number,
 ): Promise<{ status: number; contentType: string; body: Buffer }> {
+	const peer = peerHeaders(token);
 	return new Promise((resolve, reject) => {
 		const req = http.request(
-			{ socketPath, method, path, headers: { ...headers, connection: "close" }, agent: false, timeout: timeoutMs },
+			{
+				socketPath: socketPathOf(socketPath),
+				method,
+				path,
+				headers: { ...headers, ...peer.headers, connection: "close" },
+				agent: false,
+				timeout: timeoutMs,
+			},
 			(res) => {
+				if (!proofValid(token, peer.nonce, res.headers["anvilkit-sidecar-proof"])) {
+					res.destroy();
+					reject(new SidecarProofError(method, path));
+					return;
+				}
 				const chunks: Buffer[] = [];
 				let size = 0;
 				res.on("data", (c: Buffer) => {
@@ -246,19 +269,26 @@ export interface SidecarClientOptions {
 	requestTimeoutMs?: number;
 }
 
-/** The client of one socket (trusted.sock for the coordinator, candidate.sock for the Pi coder). */
+/**
+ * The client of one socket (@anvilkit/trusted for the coordinator,
+ * @anvilkit/candidate for the Pi coder) with that socket's peer token, the
+ * one this process was handed in its environment.
+ */
 export class SidecarClient {
 	private readonly requestTimeoutMs: number;
+	private readonly token: string;
 
 	constructor(
 		readonly socketPath: string,
+		token: string,
 		options: SidecarClientOptions = {},
 	) {
+		this.token = assertPeerToken(token, "the sidecar client's peer token");
 		this.requestTimeoutMs = options.requestTimeoutMs ?? 60_000;
 	}
 
 	private async json<T>(method: string, path: string, headers: Record<string, string>, body?: Buffer): Promise<T> {
-		const r = await request(this.socketPath, method, path, headers, body, this.requestTimeoutMs, 4 << 20);
+		const r = await request(this.socketPath, this.token, method, path, headers, body, this.requestTimeoutMs, 4 << 20);
 		if (r.status < 200 || r.status > 299) throw refusal(r.status, r.body);
 		return JSON.parse(r.body.toString("utf8")) as T;
 	}
@@ -272,6 +302,7 @@ export class SidecarClient {
 	async input(name: string): Promise<Buffer> {
 		const r = await request(
 			this.socketPath,
+			this.token,
 			"GET",
 			`/v1/inputs/${name}`,
 			{},
@@ -316,6 +347,7 @@ export class SidecarClient {
 		if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(attemptId)) throw new Error(`attempt id ${attemptId} is not an id`);
 		const r = await request(
 			this.socketPath,
+			this.token,
 			"GET",
 			`/v1/stages/${attemptId}`,
 			{},
@@ -330,7 +362,16 @@ export class SidecarClient {
 
 	/** GET /v1/results: the accepted stage of this attempt, or undefined when none is accepted yet (trusted socket). */
 	async acceptedStage(): Promise<AcceptedStage | undefined> {
-		const r = await request(this.socketPath, "GET", "/v1/results", {}, undefined, this.requestTimeoutMs, 1 << 20);
+		const r = await request(
+			this.socketPath,
+			this.token,
+			"GET",
+			"/v1/results",
+			{},
+			undefined,
+			this.requestTimeoutMs,
+			1 << 20,
+		);
 		if (r.status === 404) return undefined;
 		if (r.status !== 200) throw refusal(r.status, r.body);
 		return JSON.parse(r.body.toString("utf8")) as AcceptedStage;
@@ -371,17 +412,30 @@ export class SidecarClient {
 					}
 				},
 			});
+			const peer = peerHeaders(this.token);
 			const httpReq = http.request(
 				{
-					socketPath: this.socketPath,
+					socketPath: socketPathOf(this.socketPath),
 					method: "POST",
 					path: "/v1/model/relay",
-					headers: { "content-type": "application/json", "content-length": body.length, connection: "close" },
+					headers: {
+						"content-type": "application/json",
+						"content-length": body.length,
+						...peer.headers,
+						connection: "close",
+					},
 					agent: false,
 					timeout: deadlineMs,
 				},
 				(res) => {
 					const status = res.statusCode ?? 0;
+					// The proof precedes the stream: without it nothing of the
+					// answer is a frame of the sidecar's.
+					if (!proofValid(this.token, peer.nonce, res.headers["anvilkit-sidecar-proof"])) {
+						res.destroy();
+						reject(new SidecarProofError("POST", "/v1/model/relay"));
+						return;
+					}
 					if (status !== 200) {
 						const chunks: Buffer[] = [];
 						res.on("data", (c: Buffer) => chunks.push(c));
