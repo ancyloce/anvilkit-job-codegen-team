@@ -23,7 +23,7 @@ env:
   SUPERVISOR_REF: b1fab49b8514e93c5355ab6601f3a08b941a7257
   # anvilkit-job-validator commit of the hero fixture and the validator chain
   # the tests run (the one the image's base digest was built from).
-  VALIDATOR_REF: bbe10f0644deebc8f5cba196e914bab8ff38e047
+  VALIDATOR_REF: 523c15b1d4f0fc35ebd431f85a4e5c72db13bba4
 permissions:
   contents: read
 jobs:
