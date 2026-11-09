@@ -121,7 +121,7 @@ const rules: Record<string, { states: string[]; enforcedBy: Array<[string, strin
 		],
 	},
 	C17: {
-		states: ["The code makes no request", "only through a relative `url()` in a declared stylesheet"],
+		states: ["The code makes no request", "drawn in CSS or is an inline `<svg>` element in JSX"],
 		enforcedBy: [["src/validate.ts", "which nothing declared"]],
 	},
 	C18: {
@@ -138,8 +138,9 @@ const rules: Record<string, { states: string[]; enforcedBy: Array<[string, strin
 		],
 	},
 	C22: {
-		states: ["no data:, blob:, http:, https: or absolute path"],
+		states: ["A stylesheet references no file", "no `url()`, `src()` or `image-set()`"],
 		enforcedBy: [
+			["src/validate.ts", "load no stylesheet resource"],
 			["src/validate.ts", "which cannot be reviewed"],
 			["src/validate.ts", "which is not a shipped stylesheet"],
 		],

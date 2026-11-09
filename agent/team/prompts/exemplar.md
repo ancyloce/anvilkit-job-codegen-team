@@ -1,6 +1,6 @@
 ## Exemplar
 
-The validator's own certified fixture component, Hero. Copy its form, never its content: its identity, fields, texts, styles and asset are Hero's, not this component's. It shows the declaration, the package and the lockfile's first lines, the one flat ComponentConfig exported as `config` and as the default export, a component that renders from its props without browser APIs, and a stylesheet whose top-level rules style the rendered elements and use an asset only through `url()`. Hero declares `interaction` only because it counts clicks on its button: declare interaction only when the brief asks for a click counter.
+The validator's own certified fixture component, Hero. Copy its form, never its content: its identity, fields, texts, styles and asset are Hero's, not this component's. It shows the declaration, the package and the lockfile's first lines, the one flat ComponentConfig exported as `config` and as the default export, a component that renders from its props without browser APIs, and a stylesheet whose top-level rules style the rendered elements and reference no file: the mark is drawn in CSS. Hero declares `interaction` only because it counts clicks on its button: declare interaction only when the brief asks for a click counter.
 
 component.json:
 ```json
@@ -141,9 +141,8 @@ styles/hero.css:
 	display: inline-block;
 	width: 32px;
 	height: 32px;
-	background-image: url("../assets/mark.svg");
-	background-size: contain;
-	background-repeat: no-repeat;
+	border-radius: 6px;
+	background: rgb(37, 99, 235);
 }
 .ak-hero__title {
 	margin: 8px 0 4px;
