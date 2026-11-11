@@ -18,7 +18,7 @@ schemaVersion: 1
 route:
   id: controlled-openai-v1
   contextWindow: 128000
-  maxTokens: 4096
+  maxTokens: 8192
   exposurePerSend: "1000000"
 # knowledge (P2.4): the reviewed retrieval profile the Retrieval specialist
 # searches the brief's knowledge snapshot under, through the sidecar's
@@ -37,11 +37,13 @@ deadlineMarginSeconds: 30
 # roles: per role the calls (each accounted at route.exposurePerSend) and
 # the output tokens per call. The planner holds the route bound: under the
 # contract-first prompts its plan outgrew 2048 and was cut mid-call (B1,
-# 2026-10-28), which the Proxy ends as UPSTREAM_TOOL_ARGUMENTS_INVALID.
+# 2026-10-28), which the Proxy ends as UPSTREAM_TOOL_ARGUMENTS_INVALID;
+# a nine-field component's plan outgrew 4096 the same way (2026-11-11), so
+# the route bound, and with it the planner's and the coder's, is 8192.
 roles:
-  planner: { maxCalls: 2, maxOutputTokens: 4096 }
+  planner: { maxCalls: 2, maxOutputTokens: 8192 }
   retrieval: { maxCalls: 2, maxOutputTokens: 1024 }
-  coder: { maxCalls: 40, maxOutputTokens: 4096 }
+  coder: { maxCalls: 40, maxOutputTokens: 8192 }
   code_reviewer: { maxCalls: 3, maxOutputTokens: 2048 }
   security_reviewer: { maxCalls: 3, maxOutputTokens: 2048 }
 # aggregate: the calls of the whole run and the exposure they may account
