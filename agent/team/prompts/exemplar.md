@@ -30,7 +30,7 @@ package.json:
   "description": "Reviewed fixed Hero component of the P10 certification chain (DEVELOPMENT fixture).",
   "license": "MIT",
   "dependencies": {
-    "@puckeditor/core": "0.23.0",
+    "@puckeditor/core": "0.24.0",
     "react": "19.3.0"
   }
 }
@@ -49,8 +49,8 @@ importers:
   .:
     dependencies:
       '@puckeditor/core':
-        specifier: 0.23.0
-        version: 0.23.0(@floating-ui/dom@1.8.0)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(use-sync-external-store@1.7.0(react@19.3.0))
+        specifier: 0.24.0
+        version: 0.24.0(@floating-ui/dom@1.8.0)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(use-sync-external-store@1.7.0(react@19.3.0))
       react:
         specifier: 19.3.0
         version: 19.3.0

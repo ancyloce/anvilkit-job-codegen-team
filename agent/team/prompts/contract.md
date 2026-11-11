@@ -12,7 +12,7 @@ component.json and package.json (strict JSON objects, no duplicate keys)
 - C05 componentId and puckType are exactly the brief's; package.json's name is exactly the brief's package name and its version an exact semver such as 1.0.0.
 - C06 styles lists at least one stylesheet under styles/; resources lists every file under assets/ and nothing else; neither lists a path twice.
 - C07 Each editableFields entry has exactly name, type and default; the name is letters and digits in camelCase (no `_` or `-`) and unique; the type is one of text, textarea, number, select, radio, array, object, external, custom.
-- C08 package.json has only the keys name, version, description, license and dependencies; dependencies are exact versions: `react` 19.3.0, `@puckeditor/core` 0.23.0, and `react-dom` 19.3.0 only if the code imports it.
+- C08 package.json has only the keys name, version, description, license and dependencies; dependencies are exact versions: `react` 19.3.0, `@puckeditor/core` 0.24.0, and `react-dom` 19.3.0 only if the code imports it.
 - C09 pnpm-lock.yaml starts with `lockfileVersion: '9.0'` (a quoted string) and has exactly one importer '.' with no devDependencies, optionalDependencies or peerDependencies, whose dependencies are exactly those of package.json, each with specifier and version equal to the declared version.
 
 Code (src/)
