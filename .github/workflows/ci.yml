@@ -22,8 +22,10 @@ env:
   # (Go 1.27.3, 2026-10-26).
   SUPERVISOR_REF: b1fab49b8514e93c5355ab6601f3a08b941a7257
   # anvilkit-job-validator commit of the hero fixture and the validator chain
-  # the tests run (the one the image's base digest was built from).
-  VALIDATOR_REF: 523c15b1d4f0fc35ebd431f85a4e5c72db13bba4
+  # the tests run (the one the image's base digest was built from; between a
+  # hero-fixture change and the release train's Dockerfile re-pin it runs
+  # ahead of the base: e2529a3 is the Puck 0.24.0 migration, DEC-056).
+  VALIDATOR_REF: e2529a3789f6b42df3b905a1868b43a37213ccfa
 permissions:
   contents: read
 jobs:
@@ -58,7 +60,17 @@ jobs:
         run: |
           pnpm install --frozen-lockfile
           pnpm run build
-          pnpm exec playwright install --with-deps chromium-headless-shell
+          pnpm exec playwright install chromium-headless-shell
+          # The browser comes from Playwright's CDN, its system packages from
+          # Ubuntu's archive. When the hosted runner cannot reach the archive
+          # (2026-11-11: every *.ubuntu.com mirror failed to resolve while
+          # packages.microsoft.com answered), retry, then continue on the runner
+          # image's preinstalled Chrome libraries: the browser tests decide.
+          for attempt in 1 2 3; do
+            pnpm exec playwright install-deps chromium-headless-shell && break
+            echo "::warning::playwright install-deps failed (attempt $attempt of 3): Ubuntu archive unreachable"
+            [ "$attempt" = 3 ] || sleep 30
+          done
       - run: pnpm run test
         env:
           ANVILKIT_CODEGEN_TEAM_CONTRACTS_DIR: ${{ github.workspace }}/.ci/contracts
