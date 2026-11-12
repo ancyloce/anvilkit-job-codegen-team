@@ -1,8 +1,9 @@
 import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { loadTeamConfig } from "../src/config.js";
 import { contractsDir, packageRoot } from "../src/contracts.js";
 import { heroFixture, validatorPackage } from "./helpers.js";
@@ -364,4 +365,94 @@ describe("the coder writes one file per response", () => {
 		const config = loadTeamConfig(path.join(packageRoot, "team.yaml"));
 		expect(config.roles.coder.maxOutputTokens).toBe(config.route.maxTokens);
 	});
+});
+
+// An `external` field's shape is Puck's ExternalField<T> (T the prop's type):
+// a function `mapProp` and a `getItemSummary` of the stored value. The complex
+// component of 2026-11-12 spent all three repair rounds on TS2322 here: `mapProp`
+// written as a prop-name string (rounds 1 and 3) and `getItemSummary` typed with
+// the fetched row (round 2). The coder prompt states the signatures with an
+// example; with the built validator package (its TypeScript and its Puck), the
+// example compiles under strict mode and both mistakes still fail with TS2322.
+describe("the coder prompt states Puck's external-field signatures", () => {
+	const coder = readFileSync(path.join(packageRoot, "agent", "team", "prompts", "coder.md"), "utf8");
+	const example = coder.match(/For a string prop: `(featuredPlan: \{.*?\})`\./)?.[1] ?? "";
+
+	it("names the three signatures and the two mistakes", () => {
+		expect(coder).toContain(
+			"`fetchList: (params: { query: string; filters: Record<string, any> }) => Promise<any[] | null>`",
+		);
+		expect(coder).toContain(
+			"`mapProp: (row: any) => T` is a function that turns the chosen row into the stored prop value, never a string such as a prop name",
+		);
+		expect(coder).toContain(
+			"`getItemSummary: (item: T, index?: number) => ReactNode` receives the stored prop value (what `mapProp` returned), never the fetched row",
+		);
+		expect(example).toContain('type: "external"');
+	});
+
+	describe.skipIf(!validatorBuilt && !process.env.ANVILKIT_REQUIRE_VALIDATOR)(
+		"against the validator's Puck types",
+		() => {
+			let compile: (fields: string) => number[];
+			let dir: string;
+
+			beforeAll(() => {
+				const req = createRequire(path.join(validatorPackage, "package.json"));
+				const ts = req("typescript") as typeof import("typescript");
+				const modules = path.join(validatorPackage, "node_modules");
+				dir = mkdtempSync(path.join(tmpdir(), "prompt-external-"));
+				compile = (fields) => {
+					const file = path.join(dir, "config.tsx");
+					writeFileSync(
+						file,
+						[
+							'import type { ComponentConfig } from "@puckeditor/core";',
+							'const TIERS = [{ id: "starter", label: "Starter" }, { id: "pro", label: "Pro" }, { id: "enterprise", label: "Enterprise" }];',
+							"export const config: ComponentConfig<{ featuredPlan: string }> = {",
+							`\tfields: { ${fields} },`,
+							'\tdefaultProps: { featuredPlan: "pro" },',
+							"\trender: ({ featuredPlan }) => <p>{featuredPlan}</p>,",
+							"};",
+							"",
+						].join("\n"),
+					);
+					const program = ts.createProgram([file], {
+						strict: true,
+						noEmit: true,
+						skipLibCheck: true,
+						jsx: ts.JsxEmit.ReactJSX,
+						module: ts.ModuleKind.ESNext,
+						moduleResolution: ts.ModuleResolutionKind.Bundler,
+						target: ts.ScriptTarget.ES2022,
+						baseUrl: dir,
+						typeRoots: [path.join(modules, "@types")],
+						types: ["react"],
+						paths: {
+							"@puckeditor/core": [path.join(modules, "@puckeditor", "core")],
+							react: [path.join(modules, "@types", "react")],
+							"react/jsx-runtime": [path.join(modules, "@types", "react", "jsx-runtime")],
+						},
+					});
+					return ts.getPreEmitDiagnostics(program).map((d) => d.code);
+				};
+			});
+			afterAll(() => {
+				if (dir) rmSync(dir, { recursive: true, force: true });
+			});
+
+			it("the prompt's example compiles under strict mode", () => {
+				expect(compile(example)).toEqual([]);
+			});
+
+			it("`mapProp` as a prop-name string fails with TS2322", () => {
+				expect(compile(example.replace("mapProp: (row: { id: string }) => row.id", 'mapProp: "id"'))).toContain(2322);
+			});
+
+			it("`getItemSummary` typed with the fetched row fails with TS2322", () => {
+				const row = "getItemSummary: (row: { id: string; label: string }) => row.label";
+				expect(compile(example.replace(/getItemSummary: .*$/, `${row} }`))).toContain(2322);
+			});
+		},
+	);
 });
