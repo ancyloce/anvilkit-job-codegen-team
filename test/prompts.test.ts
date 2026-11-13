@@ -367,6 +367,18 @@ describe("the coder writes one file per response", () => {
 	});
 });
 
+// A review is one response. The second code review of the nine-field complex
+// component (2026-11-13, v0.1.36) ended at exactly the reviewers' 2048 tokens;
+// the Proxy refused the cut reply and the attempt ended infrastructure_failed
+// before the repaired round was validated.
+describe("the reviewers hold the route's output bound", () => {
+	it("team.yaml gives the code and security reviewers route.maxTokens", () => {
+		const config = loadTeamConfig(path.join(packageRoot, "team.yaml"));
+		expect(config.roles.code_reviewer.maxOutputTokens).toBe(config.route.maxTokens);
+		expect(config.roles.security_reviewer.maxOutputTokens).toBe(config.route.maxTokens);
+	});
+});
+
 // An `external` field's shape is Puck's ExternalField<T> (T the prop's type):
 // a function `mapProp` and a `getItemSummary` of the stored value. The complex
 // component of 2026-11-12 spent all three repair rounds on TS2322 here: `mapProp`
