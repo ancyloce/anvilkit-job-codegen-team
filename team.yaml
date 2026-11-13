@@ -39,13 +39,16 @@ deadlineMarginSeconds: 30
 # contract-first prompts its plan outgrew 2048 and was cut mid-call (B1,
 # 2026-10-28), which the Proxy ends as UPSTREAM_TOOL_ARGUMENTS_INVALID;
 # a nine-field component's plan outgrew 4096 the same way (2026-11-11), so
-# the route bound, and with it the planner's and the coder's, is 8192.
+# the route bound, and with it the planner's and the coder's, is 8192. A
+# review of that component reached the reviewers' 2048 (2026-11-13: the
+# reply was cut, the Proxy refused it and the attempt ended
+# infrastructure_failed), so the reviewers hold the route bound as well.
 roles:
   planner: { maxCalls: 2, maxOutputTokens: 8192 }
   retrieval: { maxCalls: 2, maxOutputTokens: 1024 }
   coder: { maxCalls: 40, maxOutputTokens: 8192 }
-  code_reviewer: { maxCalls: 3, maxOutputTokens: 2048 }
-  security_reviewer: { maxCalls: 3, maxOutputTokens: 2048 }
+  code_reviewer: { maxCalls: 3, maxOutputTokens: 8192 }
+  security_reviewer: { maxCalls: 3, maxOutputTokens: 8192 }
 # aggregate: the calls of the whole run and the exposure they may account
 # (calls x exposurePerSend, held in flight or consumed at Control). An
 # operation allocation that covers aggregate.exposure is never exceeded by
