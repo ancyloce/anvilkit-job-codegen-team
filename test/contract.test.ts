@@ -85,10 +85,14 @@ const rules: Record<string, { states: string[]; enforcedBy: Array<[string, strin
 			["src/validate.ts", "the entry declaration does not declare"],
 		],
 	},
-	// B1 runs 3 and 6: a Puck field `default`; an undeclared field.
+	// B1 runs 3 and 6: a Puck field `default`; an undeclared field. The v0.1.38
+	// footer: metrics and links declared `[]` beside a filled defaultProps.
 	C11: {
-		states: ["exactly the editableFields names", "carries no `default`"],
-		enforcedBy: [["fixtures/host/ssr.mjs", "differ from the declared editable fields"]],
+		states: ["exactly the editableFields names", "carries no `default`", "the same JSON value"],
+		enforcedBy: [
+			["fixtures/host/ssr.mjs", "differ from the declared editable fields"],
+			["fixtures/host/ssr.mjs", "default values differ from the declared defaults"],
+		],
 	},
 	C12: {
 		states: ["no dynamic `import()`"],
