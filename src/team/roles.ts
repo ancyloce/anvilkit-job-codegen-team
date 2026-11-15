@@ -99,8 +99,30 @@ export interface SpecialistCall<T> {
 	nextOrdinal: () => number;
 	/** Called for every call the specialist made (accounting). */
 	onResult: (r: ModelCallResult) => void;
-	/** Refines the validated arguments into the typed output, or returns a reason to ask again. */
-	accept: (args: Record<string, unknown>) => { ok: true; value: T } | { ok: false; reason: string };
+	/**
+	 * Refines the validated arguments into the typed output, or returns a
+	 * reason to ask again (sent back to the model, so it may quote the
+	 * answer) and the rule it broke in fixed words (the evidence keeps only those).
+	 */
+	accept: (args: Record<string, unknown>) => { ok: true; value: T } | { ok: false; reason: string; rule: string };
+	/** Called for every answer the specialist rejected (the evidence of the run). */
+	onRejected?: (r: SpecialistRejection) => void;
+}
+
+/**
+ * A rejected specialist answer as the evidence keeps it: which check refused
+ * it and a trusted, bounded message, never the model's text (the strict JSON
+ * parser's message can quote the arguments; an acceptor's reason the values).
+ */
+export interface SpecialistRejection {
+	role: Role;
+	callId: string;
+	check: "tool_calls" | "tool_name" | "strict_json" | "schema" | "accept";
+	detail: string;
+}
+
+function describeRejection(r: SpecialistRejection): string {
+	return `the rejected answer of call ${r.callId} (${r.check}: ${r.detail})`;
 }
 
 export class SpecialistOutputError extends Error {
@@ -129,44 +151,75 @@ export async function runSpecialist<T>(
 	];
 	const tools = [toolDefinition(call.tool)];
 	let calls = 0;
-	let lastReason = "";
+	let last: SpecialistRejection | undefined;
 	if (call.remaining().calls < 1)
 		throw new BudgetExhaustedError(`${call.role}: no call left in the allowance reserved for it`);
 	while (call.remaining().calls > 0) {
-		const result = await port.call(
-			{
-				role: call.role,
-				ordinal: call.nextOrdinal(),
-				messages,
-				tools,
-				maxOutputTokens: call.maxOutputTokens,
-				exposure: call.exposure,
-				remaining: call.remaining(),
-			},
-			{ signal },
-		);
+		let result: ModelCallResult;
+		try {
+			result = await port.call(
+				{
+					role: call.role,
+					ordinal: call.nextOrdinal(),
+					messages,
+					tools,
+					maxOutputTokens: call.maxOutputTokens,
+					exposure: call.exposure,
+					remaining: call.remaining(),
+				},
+				{ signal },
+			);
+		} catch (err) {
+			// A call that fails after a rejected answer keeps why that answer was
+			// rejected, which otherwise lived only in the retry message (LaunchSignup
+			// on v0.1.39: the planner's retry failed at the Proxy).
+			if (last && err instanceof Error) err.message = `${err.message}, after ${describeRejection(last)}`;
+			throw err;
+		}
 		calls++;
 		call.onResult(result);
-		const reason = (() => {
+		type Rejected = { ok: false; check: SpecialistRejection["check"]; reason: string; detail: string };
+		const checked = ((): { ok: true; value: T } | Rejected => {
+			const rejected = (check: Rejected["check"], reason: string, detail = reason): Rejected => ({
+				ok: false,
+				check,
+				reason,
+				detail,
+			});
 			if (result.toolCalls.length !== 1)
-				return `expected exactly one ${call.tool.name} call, got ${result.toolCalls.length}`;
+				return rejected("tool_calls", `expected exactly one ${call.tool.name} call, got ${result.toolCalls.length}`);
 			const tc = result.toolCalls[0];
 			if (!tc || tc.name !== call.tool.name)
-				return `expected a ${call.tool.name} call, got ${tc?.name} (call ${result.callId}, ${result.frames} frames: ${result.streamed.map((f) => (f.type === "tool_call" ? `tool_call:${f.toolCall?.name}` : f.type)).join(",")})`;
+				return rejected(
+					"tool_name",
+					`expected a ${call.tool.name} call, got ${tc?.name} (call ${result.callId}, ${result.frames} frames: ${result.streamed.map((f) => (f.type === "tool_call" ? `tool_call:${f.toolCall?.name}` : f.type)).join(",")})`,
+					`expected a ${call.tool.name} call, got a call of another tool`,
+				);
 			let args: Record<string, unknown>;
 			try {
 				args = parseStrictObject(tc.arguments, `${call.tool.name} arguments`);
 			} catch (err) {
-				return (err as Error).message;
+				return rejected(
+					"strict_json",
+					(err as Error).message,
+					`the ${call.tool.name} arguments are not one strict JSON object`,
+				);
 			}
+			// The reviewed tools' schemas are closed (no open maps), so the
+			// problem names schema keys, indices and the schema's own bounds.
 			const problem = validateSchema(call.tool.inputSchema, args);
-			if (problem) return `${call.tool.name} arguments: ${problem}`;
+			if (problem) {
+				const reason = `${call.tool.name} arguments: ${problem}`;
+				return rejected("schema", reason, reason.slice(0, 300));
+			}
 			const accepted = call.accept(args);
-			if (!accepted.ok) return accepted.reason;
-			return { value: accepted.value };
+			if (!accepted.ok) return rejected("accept", accepted.reason, accepted.rule);
+			return { ok: true, value: accepted.value };
 		})();
-		if (typeof reason !== "string") return { value: reason.value, calls };
-		lastReason = reason;
+		if (checked.ok) return { value: checked.value, calls };
+		const reason = checked.reason;
+		last = { role: call.role, callId: result.callId, check: checked.check, detail: checked.detail };
+		call.onRejected?.(last);
 		// The round trip is kept in the history so the next call sees its own
 		// answer and the correction; the tool result is the correction text.
 		const tc = result.toolCalls[0];
@@ -188,7 +241,7 @@ export async function runSpecialist<T>(
 	}
 	throw new SpecialistOutputError(
 		call.role,
-		`${call.role}: no schema-valid ${call.tool.name} within the role's call budget (${lastReason})`,
+		`${call.role}: no schema-valid ${call.tool.name} within the role's call budget${last ? `, the last: ${describeRejection(last)}` : ""}`,
 	);
 }
 

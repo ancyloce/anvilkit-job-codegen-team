@@ -34,7 +34,7 @@ async function runNodeSpecialist<T>(
 	call: SpecialistCall<T>,
 ): Promise<{ value: T; calls: number }> {
 	try {
-		return await runSpecialist<T>(port, call);
+		return await runSpecialist<T>(port, { ...call, onRejected: (r) => ctx.deps.rejections?.push(r) });
 	} catch (err) {
 		await ctx.report(node, "failed", round, progressCodeOf(err));
 		throw err;
@@ -63,9 +63,17 @@ export function planNode(ctx: NodeContext): Node {
 			accept: (args) => {
 				const p = args as unknown as Plan;
 				if (p.componentId !== state.brief.componentId)
-					return { ok: false, reason: `componentId ${p.componentId} is not the brief's ${state.brief.componentId}` };
+					return {
+						ok: false,
+						reason: `componentId ${p.componentId} is not the brief's ${state.brief.componentId}`,
+						rule: "the plan's componentId is not the brief's",
+					};
 				if (p.puckType !== state.brief.puckType)
-					return { ok: false, reason: `puckType ${p.puckType} is not the brief's ${state.brief.puckType}` };
+					return {
+						ok: false,
+						reason: `puckType ${p.puckType} is not the brief's ${state.brief.puckType}`,
+						rule: "the plan's puckType is not the brief's",
+					};
 				return { ok: true, value: p };
 			},
 		});
@@ -110,8 +118,17 @@ export function retrieveNode(ctx: NodeContext): Node {
 					const v = args as { answer: string; citations: string[] };
 					const invented = v.citations.filter((x) => !ids.has(x));
 					if (invented.length > 0)
-						return { ok: false, reason: `citations ${invented.join(", ")} are not among the returned evidence` };
-					if (v.citations.length === 0) return { ok: false, reason: "an answer must cite the evidence it rests on" };
+						return {
+							ok: false,
+							reason: `citations ${invented.join(", ")} are not among the returned evidence`,
+							rule: "citations outside the returned evidence",
+						};
+					if (v.citations.length === 0)
+						return {
+							ok: false,
+							reason: "an answer must cite the evidence it rests on",
+							rule: "an answer without a citation",
+						};
 					return { ok: true, value: v };
 				},
 			},
@@ -172,9 +189,14 @@ export function reviewerNode(ctx: NodeContext, role: (typeof reviewerRoles)[numb
 					return {
 						ok: false,
 						reason: `findings name files not in the revision: ${unknown.map((x) => x.file).join(", ")}`,
+						rule: "findings name files not in the revision",
 					};
 				if (f.verdict === "pass" && f.findings.some((x) => x.severity !== "minor"))
-					return { ok: false, reason: "verdict pass with blocker or major findings" };
+					return {
+						ok: false,
+						reason: "verdict pass with blocker or major findings",
+						rule: "verdict pass with blocker or major findings",
+					};
 				return { ok: true, value: f };
 			},
 		});

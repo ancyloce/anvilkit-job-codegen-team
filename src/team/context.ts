@@ -17,7 +17,7 @@ import {
 	type Role,
 } from "../port/model.js";
 import type { ValidationPort } from "../validation.js";
-import type { Prompts, RetrievalPort } from "./roles.js";
+import type { Prompts, RetrievalPort, SpecialistRejection } from "./roles.js";
 
 export interface TeamDeps {
 	config: TeamConfig;
@@ -31,6 +31,11 @@ export interface TeamDeps {
 	/** The sealed rounds by number (the executor's results, needed to continue a session). */
 	roundResults: Map<number, RoundResult>;
 	log?: (event: string, fields?: Record<string, unknown>) => void;
+	/**
+	 * The specialists' rejected answers, in order (the run's evidence): kept
+	 * outside the graph state, whose writes a failing node loses.
+	 */
+	rejections?: SpecialistRejection[];
 	/**
 	 * The operation's unreserved budget at the start (P2.4): one that funds
 	 * no send zeroes the run's aggregate exposure (budget.ts preflight).
