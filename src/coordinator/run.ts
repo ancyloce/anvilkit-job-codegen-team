@@ -27,7 +27,7 @@ import {
 import { ProtocolViolationError } from "../protocol.js";
 import { buildTeamGraph, graphConfig } from "../team/graph.js";
 import { SidecarRetrieval } from "../team/retrieval.js";
-import { SpecialistOutputError } from "../team/roles.js";
+import { SpecialistOutputError, type SpecialistRejection } from "../team/roles.js";
 import type { TeamOutcome, TeamStateType } from "../team/state.js";
 import { UnavailableValidation, type ValidationPort } from "../validation.js";
 import type { CoordinatorInputs } from "./inputs.js";
@@ -48,6 +48,8 @@ export interface TeamRun {
 	saver: SqliteSaver;
 	port: ControlledModelPort;
 	roundResults: Map<number, RoundResult>;
+	/** The specialists' rejected answers (check and trusted message only). */
+	rejections: SpecialistRejection[];
 }
 
 /** The outcome class of a run that ended by an error instead of a seal decision. */
@@ -145,6 +147,7 @@ export async function runTeam(
 				new ValidatorCli({ config: config.validation.validator, runDir: path.join(workspace, "validation"), log })
 			: new UnavailableValidation("validation.mode is none: no independent validator in this environment");
 	const roundResults = new Map<number, RoundResult>();
+	const rejections: SpecialistRejection[] = [];
 	// A checkpoint database left by an earlier coordinator of this launch is
 	// not this run's state (Control's accepted stage is the only boundary):
 	// it is kept aside as evidence, never resumed.
@@ -170,6 +173,7 @@ export async function runTeam(
 			validation,
 			deadline,
 			roundResults,
+			rejections,
 			log,
 			budgetHeadroom: scope.budgetHeadroom,
 			// The trusted sidecar's progress route (plan 0005 Phase 2): node
@@ -209,7 +213,7 @@ export async function runTeam(
 	if (signal.aborted) throw new RunCanceledError();
 	const snapshot = await graph.getState(cfg);
 	const checkpointId = (snapshot.config?.configurable as { checkpoint_id?: string } | undefined)?.checkpoint_id;
-	return { state, outcome, checkpointId, saver, port, roundResults };
+	return { state, outcome, checkpointId, saver, port, roundResults, rejections };
 }
 
 /** The evidence document of a run (private evidence: the stage binds it). */
@@ -227,6 +231,7 @@ export function runEvidence(inputs: CoordinatorInputs, run: TeamRun, started: Da
 		exposurePerSend: inputs.config.route.exposurePerSend,
 		plan: state.plan,
 		retrieval: state.retrieval,
+		rejections: run.rejections,
 		rounds: state.rounds,
 		reviews: state.reviews,
 		validations: state.validations.map((v) => ({
