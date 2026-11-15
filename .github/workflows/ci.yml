@@ -15,7 +15,7 @@ env:
   # anvilkit-agent-contracts commit holding jobs/codegen/protocol.schema.json
   # and the job and component schemas the coordinator validates against:
   # the published commit of tag go/v0.1.36, the newest contracts release.
-  CONTRACTS_REF: b7bb2f49942c800d2f51caef21a5dcd7624ca77f
+  CONTRACTS_REF: 6826e0fd16b36758c5e5a1f6271765c7134da9f9
   # anvilkit-job-codegen-supervisor commit whose sources the image builds
   # (the named build context "supervisor"): the commit the anvilkit-services
   # parent records and its job-images workflow builds the team image with
@@ -25,7 +25,7 @@ env:
   # the tests run (the one the image's base digest was built from; between a
   # hero-fixture change and the release train's Dockerfile re-pin it runs
   # ahead of the base: e2529a3 is the Puck 0.24.0 migration, DEC-056).
-  VALIDATOR_REF: e2529a3789f6b42df3b905a1868b43a37213ccfa
+  VALIDATOR_REF: ab84eb84782872abfb2f2c0135c8e98df98f8c24
 permissions:
   contents: read
 jobs:
