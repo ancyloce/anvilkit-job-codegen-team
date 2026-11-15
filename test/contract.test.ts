@@ -33,7 +33,14 @@ const rules: Record<string, { states: string[]; enforcedBy: Array<[string, strin
 			["src/source.ts", "candidate build configuration is not accepted"],
 		],
 	},
-	C02: { states: ["no two paths differ only in letter case"], enforcedBy: [["src/source.ts", "PATH_ESCAPE"]] },
+	// v0.1.39 ProductDetails: src/ProductDetails.tsx beside src/productDetails.ts (DEC-059).
+	C02: {
+		states: ["no two paths differ only in letter case", "source file names stay distinct ignoring case and extension"],
+		enforcedBy: [
+			["src/source.ts", "PATH_ESCAPE"],
+			["src/build.ts", "differ only by case, which the package intake refuses"],
+		],
+	},
 	C03: {
 		states: ["never a .d.ts file", "each declared and non-empty"],
 		enforcedBy: [
@@ -56,7 +63,10 @@ const rules: Record<string, { states: string[]; enforcedBy: Array<[string, strin
 	C06: { states: ["at least one stylesheet"], enforcedBy: [["src/validate.ts", "the source declares no stylesheet"]] },
 	// B1 2026-10-27: a field typed `color`.
 	C07: {
-		states: ["camelCase (no `_` or `-`)", "text, textarea, number, select, radio, array, object, external, custom"],
+		states: [
+			"camelCase (no `_` or `-`)",
+			"text, textarea, richtext, number, select, radio, checkbox, array, object, external, custom, slot",
+		],
 		enforcedBy: [
 			["src/source.ts", "].name is invalid"],
 			["src/source.ts", "declared twice"],
@@ -118,10 +128,15 @@ const rules: Record<string, { states: string[]; enforcedBy: Array<[string, strin
 	C15: { states: ["never copy a prop into state"], enforcedBy: [["src/validate.ts", "did not render the observer's"]] },
 	// B1 runs 3, 7 and 8: text defaults not shown, non-display values, an aria-label-only default.
 	C16: {
-		states: ["verbatim and in one piece", "An aria-label, title, alt or placeholder value is not visible text"],
+		states: [
+			"Every non-empty text, textarea or richtext default",
+			"verbatim and in one piece",
+			"An aria-label, title, alt or placeholder value is not visible text",
+		],
 		enforcedBy: [
 			["fixtures/host/ssr.mjs", "rendered HTML lacks the default text"],
 			["src/validate.ts", "the rendered text lacks"],
+			["src/validate.ts", 'f.type === "text" || f.type === "textarea" || f.type === "richtext"'],
 		],
 	},
 	C17: {
@@ -155,30 +170,49 @@ const rules: Record<string, { states: string[]; enforcedBy: Array<[string, strin
 	// the validator's field-sinks check.
 	C24: {
 		states: [
-			"every text and textarea field set to each of three hostile values",
+			"every text, textarea and richtext field set to each of three hostile values",
 			"the render never throws on it",
 			"a scheme check that keeps relative paths and http:, https:, mailto: and tel: URLs",
 			"only when it matches a fixed pattern",
-			"each select or radio field alone set to each",
-			"each select or radio option opened beside hostile text",
+			"each select, radio or checkbox field alone set to each (a checkbox as a one-item list)",
+			"each select, radio or checkbox option opened beside hostile text",
 			"only after it matches one of the field's options",
 			"No field value is rendered with dangerouslySetInnerHTML",
 		],
 		enforcedBy: [
 			["src/validate.ts", '"field-sinks"'],
-			["src/validate.ts", 'f.type === "select" || f.type === "radio"'],
+			["src/validate.ts", 'f.type === "select" || f.type === "radio" || f.type === "checkbox"'],
 			["fixtures/host/ssr.mjs", "`the component threw when "],
 			["fixtures/host/ssr.mjs", '"every text field held"'],
 			["fixtures/host/ssr.mjs", "a text value reaches a URL attribute only after a scheme check"],
 			["fixtures/host/ssr.mjs", "a text value reaches an inline style only after it matches a fixed pattern"],
 			[
 				"fixtures/host/ssr.mjs",
-				"a select or radio value reaches an inline style only after it matches one of the field's options",
+				"a select, radio or checkbox value reaches an inline style only after it matches one of the field's options",
 			],
 			["fixtures/host/ssr.mjs", "never through dangerouslySetInnerHTML"],
 			["fixtures/host/ssr.mjs", "a field value never reaches a script"],
 			["fixtures/host/ssr.mjs", "config.fields?.[field]?.options"],
 			["fixtures/host/ssr.mjs", "never through dangerouslySetInnerHTML or srcdoc"],
+		],
+	},
+	// DEC-061: the three Puck field types C07 admits since plan 0007.
+	C25: {
+		states: [
+			"never through dangerouslySetInnerHTML, and its default is plain text without markup",
+			"its value and default are lists of option values",
+			"its default is `[]` in component.json and in defaultProps",
+			"render `({ content: Content }) => <Content />`",
+		],
+		enforcedBy: [
+			["src/source.ts", "a richtext default is plain text without markup"],
+			["src/source.ts", "a checkbox default is a list of distinct option values"],
+			["src/source.ts", "a slot field declares the default [] (the empty slot)"],
+			[
+				"src/validate.ts",
+				"const choiceValue = (name: string, v: unknown): unknown => (listFields.includes(name) ? [v] : v);",
+			],
+			["fixtures/host/ssr.mjs", "const emptySlot = () => null;"],
 		],
 	},
 };

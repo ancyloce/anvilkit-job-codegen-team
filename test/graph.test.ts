@@ -22,7 +22,7 @@ import { verdictFor } from "../src/stage/manifest.js";
 import type { TeamDeps } from "../src/team/context.js";
 import { buildTeamGraph, graphConfig } from "../src/team/graph.js";
 import { reviewerRoles } from "../src/team/nodes/specialists.js";
-import { loadPrompts, type RetrievalPort, SpecialistOutputError } from "../src/team/roles.js";
+import { loadPrompts, type RetrievalPort, SpecialistOutputError, type SpecialistRejection } from "../src/team/roles.js";
 import type { TeamOutcome, TeamStateType } from "../src/team/state.js";
 import type { ValidationInput, ValidationPort, ValidationResult } from "../src/validation.js";
 import { FakeSidecar } from "./doubles.js";
@@ -785,6 +785,48 @@ describe("TeamRunner", () => {
 		const sent = sidecar.requests.filter((q) => q.callId.startsWith("att_declared:"));
 		expect(sent.length).toBeGreaterThan(3);
 		for (const q of sent) expect(q.maxExposure).toEqual({ currency: "USD", amount: "20000" });
+	});
+
+	it("keeps a rejected plan's check in the evidence when the retry fails at the Proxy (plan 0007 P1.4)", async () => {
+		// LaunchSignup on v0.1.39: plan 1 was rejected, the retry ended
+		// UPSTREAM_TOOL_ARGUMENTS_INVALID and the rejection's reason was lost.
+		const modelText = "model-text-7f3a";
+		let planner = 0;
+		sidecar.script = teamScript({
+			planner: () =>
+				++planner === 1
+					? {
+							text: ["Planning."],
+							tools: [{ id: "tc_p1", name: "submit_plan", arguments: `{"steps": "${modelText}",` }],
+						}
+					: { behaviour: "failed", failedCode: "UPSTREAM_TOOL_ARGUMENTS_INVALID" },
+		});
+		const rejections: SpecialistRejection[] = [];
+		const d = { ...deps({ validation: new ScriptedValidation([certified()]) }, config, "att_p14"), rejections };
+		const err = await buildTeamGraph(d, new MemorySaver())
+			.invoke({ brief: heroBrief, sourceRevision: "1" }, graphConfig(config, "att_p14"))
+			.then(
+				() => undefined,
+				(e: unknown) => e,
+			);
+		expect(err).toBeInstanceOf(ModelCallFailedError);
+		expect(rejections).toHaveLength(1);
+		const [r] = rejections;
+		expect(r).toMatchObject({
+			role: "planner",
+			check: "strict_json",
+			detail: "the submit_plan arguments are not one strict JSON object",
+		});
+		const outcome = outcomeOfError(err);
+		expect(outcome).toMatchObject({ kind: "failed", failureCode: "UPSTREAM_TOOL_ARGUMENTS_INVALID" });
+		expect(outcome.detail).toContain(
+			`after the rejected answer of call ${r?.callId} (strict_json: the submit_plan arguments are not one strict JSON object)`,
+		);
+		// The model's text reaches neither the evidence record nor the outcome.
+		expect(`${JSON.stringify(rejections)} ${outcome.detail}`).not.toContain(modelText);
+		// The model itself was told why (the retry carries the parser's message).
+		const retry = sidecar.requests.filter((q) => q.callId.startsWith("att_p14:") && roleOf(q) === "planner")[1];
+		expect(retry?.messages.at(-1)?.content).toMatch(/^Rejected: /);
 	});
 });
 
