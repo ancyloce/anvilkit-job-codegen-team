@@ -52,6 +52,26 @@ export function identityMismatch(sourceDir: string, expected: ComponentIdentity)
 	return problems.length > 0 ? problems.join("; ").slice(0, 1000) : undefined;
 }
 
+/**
+ * How a sealed source's package version differs from the brief's, or
+ * undefined when package.json declares exactly that version. The brief
+ * freezes the version (a refinement's is its base's with the patch number
+ * raised by one, DEC-063), and a release names the version the certified
+ * source declares; a refinement starts from a source that still declares
+ * the base's, so nothing but this check makes the new version reach the
+ * package. A package.json that cannot be read declares nothing to compare:
+ * the validator refuses such a source with its own code.
+ */
+export function versionMismatch(sourceDir: string, version: string): string | undefined {
+	const pkg = readObject(path.join(sourceDir, "package.json"));
+	if (pkg && pkg.version !== version)
+		return `package.json declares version ${JSON.stringify(pkg.version)}, the brief's version is ${version}: set package.json's version to exactly ${version}`.slice(
+			0,
+			1000,
+		);
+	return undefined;
+}
+
 function readObject(file: string): Record<string, unknown> | undefined {
 	try {
 		if (!lstatSync(file).isFile()) return undefined;
