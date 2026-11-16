@@ -6,8 +6,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AcceptedStage, Scope } from "../src/adapters/sidecar.js";
 import { zeroBudget } from "../src/budget.js";
 import { teamProfileDigest } from "../src/coordinator/inputs.js";
+import { unpackBase } from "../src/coordinator/recovery.js";
 import { type Digest, sequence, sha256 } from "../src/digest.js";
 import type { CandidateRunner } from "../src/executor.js";
+import { IdentityMismatchError } from "../src/identity.js";
 import { inventory, readTree } from "../src/source.js";
 import { archive, tarMembers } from "../src/stage/archive.js";
 import { type StageManifest, StageRefusedError, stageFormat } from "../src/stage/manifest.js";
@@ -373,6 +375,110 @@ async function repairLaunch(root: string, sidecar: FakeSidecar, coder: Candidate
 	expect(statSync(path.join(workspace, "prior")).mode & 0o022).toBe(0);
 	return { workspace, ownCss: path.join(workspace, "w", "source", "styles", "hero.css") };
 }
+
+describe("the base source of a refinement (DEC-062)", () => {
+	const dirs: string[] = [];
+	afterEach(() => {
+		for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
+	});
+	const hero = { componentId: "cmp_hero", puckType: "Hero", packageName: "@acme/hero" };
+
+	async function base() {
+		const root = mkdtempSync(path.join(tmpdir(), "anvilkit-base-"));
+		dirs.push(root);
+		const src = path.join(root, "packed");
+		mkdirSync(path.join(src, "src"), { recursive: true });
+		writeFileSync(path.join(src, "package.json"), '{"name":"@acme/hero","version":"0.1.0"}');
+		writeFileSync(path.join(src, "component.json"), '{"componentId":"cmp_hero","puckType":"Hero"}');
+		writeFileSync(path.join(src, "src", "Hero.tsx"), "export const Hero = () => null;");
+		const archiveBytes = await tarOf(
+			src,
+			["component.json", "package.json", "src/Hero.tsx"],
+			path.join(root, "source.tar"),
+		);
+		const prior = path.join(root, "prior");
+		mkdirSync(prior);
+		return { src, prior, archiveBytes, digest: sha256(archiveBytes) };
+	}
+
+	it("unpacks the bound archive into the trusted tree and inventories it, replacing what was there", async () => {
+		const { src, prior, archiveBytes, digest } = await base();
+		mkdirSync(path.join(prior, "source"));
+		writeFileSync(path.join(prior, "source", "stale.txt"), "left by an earlier coordinator");
+		const seed = await unpackBase(archiveBytes, digest, hero, prior, limits);
+		expect(seed.dir).toBe(prior);
+		expect(seed.source.files.map((f) => f.path)).toEqual(["component.json", "package.json", "src/Hero.tsx"]);
+		expect(seed.source.manifestDigest).toBe(inventory(readTree(src, limits)).manifestDigest);
+		expect(existsSync(path.join(prior, "source", "stale.txt"))).toBe(false);
+		expect(readFileSync(path.join(prior, "source", "src", "Hero.tsx"), "utf8")).toContain("Hero");
+	});
+
+	it("refuses bytes that are not the archive the launch envelope binds", async () => {
+		const { prior, archiveBytes } = await base();
+		await expect(unpackBase(archiveBytes, sha256(Buffer.from("other")), hero, prior, limits)).rejects.toMatchObject({
+			name: "StageRefusedError",
+			code: "STALE_STAGE",
+		});
+		expect(existsSync(path.join(prior, "source"))).toBe(false);
+	});
+
+	it("refuses a base that declares another component: a refinement keeps its identity", async () => {
+		const { prior, archiveBytes, digest } = await base();
+		for (const other of [
+			{ ...hero, componentId: "cmp_banner" },
+			{ ...hero, puckType: "Banner" },
+			{ ...hero, packageName: "@acme/banner" },
+		])
+			await expect(unpackBase(archiveBytes, digest, other, prior, limits)).rejects.toBeInstanceOf(
+				IdentityMismatchError,
+			);
+	});
+});
+
+describe("a refinement launch starts the coder from the base source (DEC-062)", () => {
+	let sidecar: FakeSidecar;
+	let root: string;
+	beforeEach(async () => {
+		sidecar = new FakeSidecar("base");
+		await sidecar.start();
+		root = mkdtempSync(path.join(tmpdir(), "base-launch-"));
+	});
+	afterEach(async () => {
+		await sidecar.stop();
+		rmSync(root, { recursive: true, force: true });
+	});
+
+	it("a source input without a stage is the base: one first round at the brief's revision, sealed with the edit over the base", async () => {
+		// The same sealed Hero source a repair launch would continue, bound
+		// here as the launch's only source: no stage, no validator evidence.
+		const prior = await priorLaunch(root, sidecar, coordinatorTeamYaml);
+		sidecar.script = teamScript({ coder: repairCoder });
+		const coder = localRunner(sidecar.candidateToken);
+		const run = await runCoordinator({
+			sidecar,
+			root,
+			inputs: { source: prior.inputs.source },
+			supervisor: async (req) =>
+				candidateEnded(req, await coder.run({ round: req.round as number, roundDir: req.roundDir as string })),
+		});
+		expect(run.code, run.log).toBe(0);
+		expect(run.requests.map((q) => q.round)).toEqual([1]);
+		expect(run.result.counters).toEqual({ rounds: 1, reviewRounds: 1, repairs: 0 });
+		const coderCall = sidecar.requests.find((q) => q.callId.includes(":coder:"));
+		expect(coderCall?.messages.find((m) => m.role === "user")?.content).toMatch(/^Refine the existing component/);
+		const plannerCall = sidecar.requests.find((q) => q.callId.includes(":planner:"));
+		expect(plannerCall?.messages.at(-1)?.content).toContain("styles/hero.css");
+		const stage = sidecar.transfers.find((t) => t.class === "stage");
+		const manifest = JSON.parse(String((await tarMembers(stage?.body ?? Buffer.alloc(0))).get("manifest.json")));
+		expect(manifest.source).toMatchObject({ round: 1, revision: "1" });
+		expect(manifest.source.manifestDigest).not.toBe(prior.manifestDigest);
+		const sealed = await tarMembers(sidecar.transfers.find((t) => t.class === "source")?.body ?? Buffer.alloc(0));
+		expect(String(sealed.get("styles/hero.css"))).toContain(".ak-hero { /* repaired */");
+		// The trusted base tree keeps the bound bytes; the coder edited its own copy.
+		const baseCss = path.join(root, "workspace", "prior", "source", "styles", "hero.css");
+		expect(readFileSync(baseCss, "utf8")).not.toContain("repaired");
+	});
+});
 
 describe("a repair launch repairs the prior source as the coder's own copy (P0.8 AC3)", () => {
 	let sidecar: FakeSidecar;

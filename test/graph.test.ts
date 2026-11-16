@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,7 +17,7 @@ import {
 	DeadlineExceededError,
 	ModelCallFailedError,
 } from "../src/port/model.js";
-import { readTree } from "../src/source.js";
+import { inventory, readTree } from "../src/source.js";
 import { verdictFor } from "../src/stage/manifest.js";
 import type { TeamDeps } from "../src/team/context.js";
 import { buildTeamGraph, graphConfig } from "../src/team/graph.js";
@@ -311,6 +311,58 @@ describe("TeamRunner", () => {
 		expect(repairCall?.messages.at(-1)?.content).toContain("MISSING_CSS");
 		expect(repairCall?.callId).toBe("att_team:r2:coder:1");
 		expect(sidecar.totalSends()).toBe(sidecar.requests.length);
+	});
+
+	it("a refinement plans against the base source and its coder starts from it, not from an empty directory (DEC-062)", async () => {
+		// The trusted tree as the coordinator unpacks a base: the Hero source
+		// and one file the plan never mentions.
+		const prior = path.join(workspace, "prior");
+		cpSync(heroFixture, path.join(prior, "source"), { recursive: true });
+		writeFileSync(path.join(prior, "source", "styles", "legacy.css"), ".ak-legacy { color: red; }\n");
+		const base = { dir: prior, source: inventory(readTree(path.join(prior, "source"), config.source)) };
+		const validation = new ScriptedValidation([certified()]);
+		const d = deps({ validation, base });
+		sidecar.script = teamScript({
+			coder: (req: RelayRequest) => {
+				const last = req.messages.at(-1);
+				if (last?.role === "user")
+					return {
+						text: ["Refining."],
+						tools: [
+							{
+								id: "tc_refine",
+								name: "edit",
+								arguments: JSON.stringify({
+									path: "styles/hero.css",
+									edits: [{ oldText: ".ak-hero {", newText: ".ak-hero { /* refined */" }],
+								}),
+							},
+						],
+					};
+				return { text: ["Refined."] };
+			},
+		});
+		const final = (await buildTeamGraph(d, new MemorySaver()).invoke(
+			{ brief: heroBrief, sourceRevision: "1" },
+			graphConfig(config, "att_team"),
+		)) as TeamStateType;
+		expect(final.outcome?.kind).toBe("certified");
+		expect(final.rounds.map((r) => r.kind)).toEqual(["code"]);
+		expect(final.rounds[0]?.sourceRevision).toBe("1");
+		expect(final.repairs).toBe(0);
+		// The sealed source is the base with the one edit: every base file,
+		// the unplanned one included, and nothing the coder wrote anew.
+		expect(final.rounds[0]?.files).toBe(base.source.files.length);
+		const sealed = path.join(final.rounds[0]?.sealedDir ?? "", "source");
+		expect(readFileSync(path.join(sealed, "styles", "legacy.css"), "utf8")).toContain(".ak-legacy");
+		expect(readFileSync(path.join(sealed, "styles", "hero.css"), "utf8")).toContain("/* refined */");
+		expect(readFileSync(path.join(prior, "source", "styles", "hero.css"), "utf8")).not.toContain("/* refined */");
+		const planner = sidecar.requests.find((q) => roleOf(q) === "planner")?.messages.at(-1)?.content ?? "";
+		expect(planner).toContain("This is a refinement");
+		expect(planner).toContain("styles/legacy.css");
+		const coder = sidecar.requests.find((q) => roleOf(q) === "coder")?.messages.find((m) => m.role === "user");
+		expect(coder?.content).toMatch(/^Refine the existing component to source revision 1/);
+		expect(sidecar.requests.filter((q) => roleOf(q) === "coder")).toHaveLength(2);
 	});
 
 	it("infrastructure, invalid and unavailable validation never start a repair", async () => {

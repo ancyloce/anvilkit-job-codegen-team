@@ -16,6 +16,7 @@ import {
 	type ModelCallResult,
 	type Role,
 } from "../port/model.js";
+import type { SealedSource } from "../source.js";
 import type { ValidationPort } from "../validation.js";
 import type { Prompts, RetrievalPort, SpecialistRejection } from "./roles.js";
 
@@ -28,6 +29,12 @@ export interface TeamDeps {
 	validation: ValidationPort;
 	deadline: Date;
 	now?: () => Date;
+	/**
+	 * A refinement's base (DEC-062): the trusted tree holding the source the
+	 * first coding round starts from, and its inventory. Absent for a
+	 * generation and for a repair launch, which continues its prior round.
+	 */
+	base?: { dir: string; source: SealedSource };
 	/** The sealed rounds by number (the executor's results, needed to continue a session). */
 	roundResults: Map<number, RoundResult>;
 	log?: (event: string, fields?: Record<string, unknown>) => void;

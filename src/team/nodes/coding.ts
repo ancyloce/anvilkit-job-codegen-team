@@ -9,13 +9,14 @@
 // as a defect of the source the round did not finish. The first round of a
 // repair launch has no sealed round of this attempt to continue: it starts
 // from the prior tree (the prior attempt's proven source), which the coder
-// copies into its own source directory before it writes.
+// copies into its own source directory before it writes. The first round
+// of a refinement (DEC-062) starts the same way from the base tree.
 
 import path from "node:path";
 import type { RoundResult } from "../../executor.js";
 import { BudgetExhaustedError } from "../../port/model.js";
 import type { NodeContext } from "../context.js";
-import { repairUser } from "../roles.js";
+import { codeUser, repairUser } from "../roles.js";
 import type { RoundSummary, TeamOutcome, TeamStateType } from "../state.js";
 
 type Node = (state: TeamStateType) => Promise<Partial<TeamStateType>>;
@@ -45,16 +46,14 @@ export function codeNode(ctx: NodeContext): Node {
 					: undefined;
 			prompt = repairUser(findings, v, revision);
 		} else {
-			prompt = [
-				`Implement source revision ${revision} exactly as planned.`,
-				"Frozen brief (JSON):",
-				JSON.stringify(state.brief, null, 2),
-				"Plan (JSON):",
-				JSON.stringify(state.plan, null, 2),
-				state.retrieval?.status === "evidence"
-					? `Retrieved conventions (cited): ${state.retrieval.answer}`
-					: "No retrieved conventions were available; follow the plan and the source contract only.",
-			].join("\n\n");
+			if (deps.base) priorSource = path.join(deps.base.dir, "source");
+			prompt = codeUser(
+				state.brief,
+				state.plan,
+				revision,
+				state.retrieval?.status === "evidence" ? state.retrieval.answer : undefined,
+				deps.base !== undefined,
+			);
 		}
 		await ctx.report("code", "started", round);
 		const result = await deps.executor.round({

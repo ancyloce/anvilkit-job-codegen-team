@@ -31,7 +31,7 @@ import { SpecialistOutputError, type SpecialistRejection } from "../team/roles.j
 import type { TeamOutcome, TeamStateType } from "../team/state.js";
 import { UnavailableValidation, type ValidationPort } from "../validation.js";
 import type { CoordinatorInputs } from "./inputs.js";
-import type { PriorSeed } from "./recovery.js";
+import type { BaseSeed, PriorSeed } from "./recovery.js";
 
 /** The launch was canceled while the team ran: nothing is sealed or submitted. */
 export class RunCanceledError extends Error {
@@ -85,7 +85,7 @@ export function endsWithoutStage(err: unknown): boolean {
 
 export async function runTeam(
 	inputs: CoordinatorInputs,
-	start: { brief: TeamStateType["brief"] & { sourceRevision: string }; prior?: PriorSeed },
+	start: { brief: TeamStateType["brief"] & { sourceRevision: string }; prior?: PriorSeed; base?: BaseSeed },
 	signal: AbortSignal,
 	log: (event: string, fields?: Record<string, unknown>) => void,
 ): Promise<TeamRun> {
@@ -172,6 +172,7 @@ export async function runTeam(
 			}),
 			validation,
 			deadline,
+			base: start.base,
 			roundResults,
 			rejections,
 			log,

@@ -7,18 +7,25 @@
 // and the repair and review counters and the budget accounting continue
 // from the prior manifest — they never reset. Nothing of the prior attempt's calls is replayed: the
 // run is new, seeded from a proven computation boundary. Without those
-// inputs the run starts fresh from the frozen brief. The proven source is
+// inputs the run starts fresh from the frozen brief, or, when the launch
+// names a source input alone, from that source as the base of a refinement
+// (DEC-062): the archive Control bound to the operation, checked against the
+// envelope's digest and the allocated identity. The proven source is
 // unpacked into the trusted side's read-only prior tree
 // (<workspace>/prior/source, root-owned, candidate-readable): the Pi coder
 // of the repair round copies it into its own writable source directory
 // before it writes (coder.ts), so the round repairs the prior source as the
-// candidate identity and the trusted tree stays the proven bytes.
+// candidate identity and the trusted tree stays the proven bytes. A
+// refinement's base is unpacked into the same tree and copied the same way
+// by the first round.
 import { readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import type { BudgetState } from "../budget.js";
 import { type Digest, sha256 } from "../digest.js";
 import { trustedDir } from "../executor.js";
-import { stageArchiveMember } from "../stage/archive.js";
+import { type ComponentIdentity, IdentityMismatchError, identityMismatch } from "../identity.js";
+import { inventory, readTree, type SealedSource, type SourceLimits } from "../source.js";
+import { stageArchiveMember, unpackTar } from "../stage/archive.js";
 import { type StageManifest, StageRefusedError } from "../stage/manifest.js";
 import { importPrior, type ProvenStage } from "../stage/proof.js";
 import type { StageStore } from "../stage/store.js";
@@ -36,9 +43,16 @@ export interface PriorSeed {
 	budget: BudgetState;
 }
 
+/** A refinement's base source as this attempt starts from it (DEC-062). */
+export interface BaseSeed {
+	/** The trusted read-only tree holding source/ (the base as unpacked). */
+	dir: string;
+	source: SealedSource;
+}
+
 export type Recovery =
 	| { kind: "accepted"; proven: ProvenStage }
-	| { kind: "run"; brief: Brief & { sourceRevision: string }; prior?: PriorSeed };
+	| { kind: "run"; brief: Brief & { sourceRevision: string }; prior?: PriorSeed; base?: BaseSeed };
 
 export async function decideRecovery(
 	inputs: CoordinatorInputs,
@@ -53,7 +67,66 @@ export async function decideRecovery(
 		parseBrief(readFileSync(path.join(inputs.inputDir, "brief"), "utf8")),
 		inputs.envelope,
 	);
+	const names = new Set(inputs.envelope.inputs.map((i) => i.name));
+	if (names.has("source") && !names.has("stage"))
+		return { kind: "run", brief, base: await importBase(inputs, brief, log) };
 	return { kind: "run", brief, prior: await importPriorBoundary(inputs, log) };
+}
+
+/**
+ * A refinement's first attempt: the source input alone is the base Control
+ * resolved from the operation's subject. The supervisor loaded it through
+ * the sidecar under the envelope's digest; it is checked again here, as
+ * every input the run builds on.
+ */
+async function importBase(
+	inputs: CoordinatorInputs,
+	identity: ComponentIdentity,
+	log: (event: string, fields?: Record<string, unknown>) => void,
+): Promise<BaseSeed> {
+	const { envelope, inputDir, workspace, config } = inputs;
+	const input = envelope.inputs.find((i) => i.name === "source");
+	if (!input) throw new Error("the launch envelope names no source input");
+	const priorDir = path.join(workspace, "prior");
+	trustedDir(priorDir);
+	const seed = await unpackBase(
+		readFileSync(path.join(inputDir, "source")),
+		input.digest as Digest,
+		identity,
+		priorDir,
+		config.source,
+	);
+	log("refinement base imported", {
+		files: seed.source.files.length,
+		totalBytes: seed.source.totalBytes,
+		manifestDigest: seed.source.manifestDigest,
+	});
+	return seed;
+}
+
+/**
+ * Unpacks a refinement's base into <dir>/source, replacing what an earlier
+ * coordinator of the launch left there. Refuses bytes that do not hash to
+ * the launch envelope's digest and a base that declares another component
+ * than the allocated one: a refinement keeps its component (DEC-062), and a
+ * base of another identity must not become this one's source. The base is
+ * candidate-written content and stays data: nothing here executes it.
+ */
+export async function unpackBase(
+	source: Buffer,
+	digest: Digest,
+	identity: ComponentIdentity,
+	dir: string,
+	limits: SourceLimits,
+): Promise<BaseSeed> {
+	if (sha256(source) !== digest)
+		throw new StageRefusedError("STALE_STAGE", "the base source does not hash to the launch envelope's digest");
+	const sourceDir = path.join(dir, "source");
+	rmSync(sourceDir, { recursive: true, force: true });
+	await unpackTar(source, sourceDir, limits);
+	const mismatch = identityMismatch(sourceDir, identity);
+	if (mismatch) throw new IdentityMismatchError(`the refinement base is another component: ${mismatch}`);
+	return { dir, source: inventory(readTree(sourceDir, limits)) };
 }
 
 async function importPriorBoundary(
@@ -63,9 +136,8 @@ async function importPriorBoundary(
 	const { envelope, inputDir, sidecar, scope, profileDigest, workspace, config } = inputs;
 	const stageInput = envelope.inputs.find((i) => i.name === "stage");
 	const sourceInput = envelope.inputs.find((i) => i.name === "source");
-	if (!stageInput && !sourceInput) return undefined;
-	if (!stageInput || !sourceInput)
-		throw new Error("a repair launch names both the stage and the source input of the prior attempt");
+	if (!stageInput) return undefined;
+	if (!sourceInput) throw new Error("a repair launch names both the stage and the source input of the prior attempt");
 	const stage = readFileSync(path.join(inputDir, "stage"));
 	const source = readFileSync(path.join(inputDir, "source"));
 	// The prior attempt is what the stage manifest names; Control's answer

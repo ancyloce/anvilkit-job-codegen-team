@@ -53,7 +53,11 @@ export function planNode(ctx: NodeContext): Node {
 		const { value } = await runNodeSpecialist<Plan>(ctx, "planner", undefined, deps.port, {
 			role: "planner",
 			systemPrompt: deps.prompts.planner,
-			user: planUser(state.brief, state.sourceRevision),
+			user: planUser(
+				state.brief,
+				state.sourceRevision,
+				deps.base && renderSource(deps.base.dir, deps.base.source, deps.config.source.maxReviewBytes),
+			),
 			tool: tool("submit_plan"),
 			maxOutputTokens: deps.config.roles.planner.maxOutputTokens,
 			exposure: budget.perSend,
