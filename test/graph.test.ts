@@ -313,56 +313,88 @@ describe("TeamRunner", () => {
 		expect(sidecar.totalSends()).toBe(sidecar.requests.length);
 	});
 
-	it("a refinement plans against the base source and its coder starts from it, not from an empty directory (DEC-062)", async () => {
+	it("a refinement plans against the base source, starts its coder from it and delivers the brief's version, not the base's (DEC-062, DEC-063)", async () => {
 		// The trusted tree as the coordinator unpacks a base: the Hero source
-		// and one file the plan never mentions.
+		// at version 1.0.0 and one file the plan never mentions. The brief of
+		// the change declares the next patch version.
 		const prior = path.join(workspace, "prior");
 		cpSync(heroFixture, path.join(prior, "source"), { recursive: true });
 		writeFileSync(path.join(prior, "source", "styles", "legacy.css"), ".ak-legacy { color: red; }\n");
 		const base = { dir: prior, source: inventory(readTree(path.join(prior, "source"), config.source)) };
+		const brief = { ...heroBrief, version: "1.0.1" };
 		const validation = new ScriptedValidation([certified()]);
-		const d = deps({ validation, base });
+		const rejections: SpecialistRejection[] = [];
+		const d = { ...deps({ validation, base }), rejections };
+		let plannerCalls = 0;
+		const edit = (id: string, file: string, oldText: string, newText: string) => ({
+			text: ["Editing."],
+			tools: [{ id, name: "edit", arguments: JSON.stringify({ path: file, edits: [{ oldText, newText }] }) }],
+		});
 		sidecar.script = teamScript({
+			// The first plan keeps the version the current source declares.
+			planner: () => {
+				plannerCalls++;
+				const plan = { ...heroPlanOf(), version: plannerCalls === 1 ? "1.0.0" : "1.0.1" };
+				return {
+					text: ["Planning."],
+					tools: [{ id: `tc_plan_${plannerCalls}`, name: "submit_plan", arguments: JSON.stringify(plan) }],
+				};
+			},
+			// The first round changes the stylesheet and leaves package.json
+			// as the base has it; the repair turn names the version to set.
 			coder: (req: RelayRequest) => {
 				const last = req.messages.at(-1);
-				if (last?.role === "user")
-					return {
-						text: ["Refining."],
-						tools: [
-							{
-								id: "tc_refine",
-								name: "edit",
-								arguments: JSON.stringify({
-									path: "styles/hero.css",
-									edits: [{ oldText: ".ak-hero {", newText: ".ak-hero { /* refined */" }],
-								}),
-							},
-						],
-					};
-				return { text: ["Refined."] };
+				if (last?.role !== "user") return { text: ["Done."] };
+				if (/Repair round/.test(last.content))
+					return edit("tc_version", "package.json", '"version": "1.0.0"', '"version": "1.0.1"');
+				return edit("tc_refine", "styles/hero.css", ".ak-hero {", ".ak-hero { /* refined */");
 			},
 		});
 		const final = (await buildTeamGraph(d, new MemorySaver()).invoke(
-			{ brief: heroBrief, sourceRevision: "1" },
+			{ brief, sourceRevision: "1" },
 			graphConfig(config, "att_team"),
 		)) as TeamStateType;
 		expect(final.outcome?.kind).toBe("certified");
-		expect(final.rounds.map((r) => r.kind)).toEqual(["code"]);
-		expect(final.rounds[0]?.sourceRevision).toBe("1");
-		expect(final.repairs).toBe(0);
-		// The sealed source is the base with the one edit: every base file,
-		// the unplanned one included, and nothing the coder wrote anew.
+
+		// The plan: a version that is not the brief's is refused and asked again.
+		expect(plannerCalls).toBe(2);
+		expect(rejections.map((r) => `${r.role}:${r.check}:${r.detail}`)).toEqual([
+			"planner:accept:the plan's version is not the brief's",
+		]);
+		expect(final.plan?.version).toBe("1.0.1");
+		const planner = sidecar.requests.find((q) => roleOf(q) === "planner")?.messages.at(-1)?.content ?? "";
+		expect(planner).toContain("This is a refinement");
+		expect(planner).toContain("The package version is the brief's, not the one the current source declares.");
+		expect(planner).toContain("styles/legacy.css");
+
+		// The first round starts from the base and is sealed with the base's
+		// version: a repairable finding of the team, before the validator is asked.
+		expect(final.rounds.map((r) => r.kind)).toEqual(["code", "repair"]);
+		expect(final.rounds.map((r) => r.sourceRevision)).toEqual(["1", "2"]);
 		expect(final.rounds[0]?.files).toBe(base.source.files.length);
-		const sealed = path.join(final.rounds[0]?.sealedDir ?? "", "source");
+		const first = final.validations[0]?.result;
+		expect(first?.status).toBe("repairable");
+		expect(first && "failureCode" in first ? first.failureCode : "").toBe("CANDIDATE_BUILD_FAILED");
+		expect(first && "detail" in first ? first.detail : "").toBe(
+			"package.json declares version \"1.0.0\", the brief's version is 1.0.1: set package.json's version to exactly 1.0.1",
+		);
+		expect(validation.inputs.map((v) => v.round)).toEqual([2]);
+		const turns = sidecar.requests
+			.filter((q) => roleOf(q) === "coder")
+			.map((q) => q.messages.at(-1))
+			.filter((m) => m?.role === "user")
+			.map((m) => m?.content ?? "");
+		expect(turns[0]).toMatch(/^Refine the existing component to source revision 1/);
+		expect(turns[0]).toContain("set package.json's version to the plan's version 1.0.1");
+		expect(turns.at(-1)).toContain("set package.json's version to exactly 1.0.1");
+
+		// The delivered source: the base with the two edits, at the brief's version.
+		const sealed = path.join(final.rounds[1]?.sealedDir ?? "", "source");
+		expect(JSON.parse(readFileSync(path.join(sealed, "package.json"), "utf8")).version).toBe("1.0.1");
 		expect(readFileSync(path.join(sealed, "styles", "legacy.css"), "utf8")).toContain(".ak-legacy");
 		expect(readFileSync(path.join(sealed, "styles", "hero.css"), "utf8")).toContain("/* refined */");
 		expect(readFileSync(path.join(prior, "source", "styles", "hero.css"), "utf8")).not.toContain("/* refined */");
-		const planner = sidecar.requests.find((q) => roleOf(q) === "planner")?.messages.at(-1)?.content ?? "";
-		expect(planner).toContain("This is a refinement");
-		expect(planner).toContain("styles/legacy.css");
-		const coder = sidecar.requests.find((q) => roleOf(q) === "coder")?.messages.find((m) => m.role === "user");
-		expect(coder?.content).toMatch(/^Refine the existing component to source revision 1/);
-		expect(sidecar.requests.filter((q) => roleOf(q) === "coder")).toHaveLength(2);
+		expect(JSON.parse(readFileSync(path.join(prior, "source", "package.json"), "utf8")).version).toBe("1.0.0");
 	});
 
 	it("infrastructure, invalid and unavailable validation never start a repair", async () => {

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { bindLaunchIdentity, type Envelope, parseEnvelope } from "../src/coordinator/inputs.js";
-import { IdentityMismatchError, identityMismatch } from "../src/identity.js";
+import { IdentityMismatchError, identityMismatch, versionMismatch } from "../src/identity.js";
 import { heroBrief, heroIdentity } from "./helpers.js";
 
 describe("the allocated component identity (P0.8)", () => {
@@ -28,6 +28,20 @@ describe("the allocated component identity (P0.8)", () => {
 			entry: "src/index.tsx",
 			...over,
 		});
+
+	it("the package version is the brief's: another one is named with the version to set; an unreadable package is left to the validator (DEC-063)", () => {
+		const pkg = (version: unknown) => JSON.stringify({ name: "@anvilkit/hero-fixed", version });
+		expect(versionMismatch(source({ "package.json": pkg("1.0.1") }), "1.0.1")).toBe(undefined);
+		expect(versionMismatch(source({ "package.json": pkg("1.0.0") }), "1.0.1")).toBe(
+			"package.json declares version \"1.0.0\", the brief's version is 1.0.1: set package.json's version to exactly 1.0.1",
+		);
+		expect(
+			versionMismatch(source({ "package.json": JSON.stringify({ name: "@anvilkit/hero-fixed" }) }), "1.0.1"),
+		).toContain("declares version undefined");
+		expect(versionMismatch(source({ "package.json": pkg(101) }), "1.0.1")).toContain("declares version 101");
+		expect(versionMismatch(source({ "package.json": "{ not json" }), "1.0.1")).toBe(undefined);
+		expect(versionMismatch(source({ "README.md": "no package" }), "1.0.1")).toBe(undefined);
+	});
 
 	it("names every member of the sealed declaration that differs; a declaration that cannot be read is left to the validator", () => {
 		const pkg = JSON.stringify({ name: "@anvilkit/hero-fixed", version: "1.0.0" });
