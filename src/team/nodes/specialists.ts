@@ -78,6 +78,14 @@ export function planNode(ctx: NodeContext): Node {
 						reason: `puckType ${p.puckType} is not the brief's ${state.brief.puckType}`,
 						rule: "the plan's puckType is not the brief's",
 					};
+				// The version is the brief's too: a refinement plans over a
+				// source that still declares its base's (DEC-063).
+				if (p.version !== state.brief.version)
+					return {
+						ok: false,
+						reason: `version ${p.version} is not the brief's ${state.brief.version}`,
+						rule: "the plan's version is not the brief's",
+					};
 				return { ok: true, value: p };
 			},
 		});

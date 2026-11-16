@@ -5,9 +5,12 @@
 // sealed source, its declaration is compared with the allocated identity of
 // the brief (P0.8, SEC-12): a source that declares another componentId,
 // puckType or package is invalid (IDENTITY_MISMATCH) — never certified as
-// another type, never a repair target.
+// another type, never a repair target. Its package version is compared with
+// the brief's too (DEC-063): the version is the coder's to write, so another
+// one is a repairable finding of the round, and the repair turn names the
+// version to set.
 import path from "node:path";
-import { identityMismatch, identityMismatchCode } from "../../identity.js";
+import { identityMismatch, identityMismatchCode, versionMismatch } from "../../identity.js";
 import type { ValidationResult } from "../../validation.js";
 import type { NodeContext } from "../context.js";
 import type { TeamStateType } from "../state.js";
@@ -38,17 +41,23 @@ export function validateNode(ctx: NodeContext): (state: TeamStateType) => Promis
 			puckType: state.brief.puckType,
 			packageName: state.brief.packageName,
 		};
-		const mismatch = identityMismatch(path.join(result.sealedDir, "source"), identity);
-		if (mismatch) {
-			ctx.log("validate", { round: last.round, status: "invalid", failureCode: identityMismatchCode });
-			await ctx.report("validate", "completed", last.round, identityMismatchCode);
+		// What the team classifies itself, before the validator is asked.
+		const sourceDir = path.join(result.sealedDir, "source");
+		const mismatch = identityMismatch(sourceDir, identity);
+		const version = mismatch ? undefined : versionMismatch(sourceDir, state.brief.version);
+		const own = mismatch
+			? { status: "invalid" as const, failureCode: identityMismatchCode, detail: mismatch }
+			: version
+				? { status: "repairable" as const, failureCode: "CANDIDATE_BUILD_FAILED", detail: version }
+				: undefined;
+		if (own) {
+			ctx.log("validate", { round: last.round, status: own.status, failureCode: own.failureCode });
+			await ctx.report("validate", "completed", last.round, own.failureCode);
 			const res: ValidationResult = {
-				status: "invalid",
-				failureCode: identityMismatchCode,
-				detail: mismatch,
+				...own,
 				certification: {
 					verdict: "-",
-					failureCode: identityMismatchCode,
+					failureCode: own.failureCode,
 					complete: false,
 					checks: [],
 					bindings: {},
