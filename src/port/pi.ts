@@ -78,7 +78,7 @@ const zeroUsage = (): PiUsage => ({
 
 // The relay reports the native counters as the protocol states them:
 // inputUnits is inclusive of the cached input. Pi's own usage (pi-ai
-// 1.4.0, api/openai-completions: input = prompt − cacheRead − cacheWrite;
+// 1.6.0, api/openai-completions: input = prompt − cacheRead − cacheWrite;
 // session statistics sum input + output + cacheRead + cacheWrite) counts
 // the cached part once, under cacheRead. So the Pi view carries the
 // non-cached part as input and keeps the native total in totalTokens;
