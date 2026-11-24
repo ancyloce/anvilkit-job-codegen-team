@@ -96,6 +96,9 @@ export async function createCoderSession(o: CoderSessionOptions): Promise<AgentS
 		},
 		retry: { enabled: false, maxRetries: 0, provider: { maxRetries: 0 } },
 		images: { blockImages: true, autoResize: false },
+		// Pi 1.5.1 defaults to "idle" warming (extra model calls between runs);
+		// every call here is a reviewed, budgeted Proxy call, so none is added.
+		cacheWarming: "off",
 		quietStartup: true,
 	});
 	// modelsPath null: no models.json is read and the catalog store stays

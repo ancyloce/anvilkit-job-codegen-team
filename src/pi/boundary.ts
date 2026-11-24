@@ -123,11 +123,11 @@ export class SourceBoundary {
 	}
 
 	grep(): GrepOperations {
-		// The search itself is the SDK's (ripgrep over the checked directory,
-		// without following links); the directory check runs before it starts.
+		// The search itself is the SDK's (ripgrep run in the checked directory,
+		// without following links; since Pi 1.5.1 it also supplies the context
+		// lines, so no file is read here); the directory check runs before it starts.
 		return {
 			isDirectory: async (p) => (await stat(await this.check(p, "grep"))).isDirectory(),
-			readFile: async (p) => readFile(await this.check(p, "grep"), "utf-8"),
 		};
 	}
 
@@ -140,8 +140,13 @@ export class SourceBoundary {
 					() => false,
 				);
 			},
-			glob: async (pattern, cwd, options) => {
+			glob: async (requested, cwd, options) => {
 				const searchRoot = await this.check(cwd, "find");
+				// Pi 1.6.0's pattern contract (the find tool's description): a
+				// leading "./" is dropped and a pattern without "/" matches file
+				// names at any depth. Every check below runs on the pattern searched.
+				const trimmed = requested.replace(/^(?:\.\/)+/, "");
+				const pattern = trimmed.includes("/") ? trimmed : `**/${trimmed}`;
 				// The pattern's scope is fixed before anything is read: Node's
 				// glob would follow an absolute pattern, a `..` segment (also
 				// one a brace hides) and a link named by a literal segment out
