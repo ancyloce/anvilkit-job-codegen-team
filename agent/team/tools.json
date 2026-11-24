@@ -295,7 +295,7 @@
           },
           "glob": {
             "type": "string",
-            "description": "Filter files by glob pattern, e.g. '*.ts' or '**/*.spec.ts'"
+            "description": "Filter files by glob pattern relative to path, e.g. 'src/**/*.ts'. Without '/', e.g. '*.ts', it matches file names at any depth"
           },
           "ignoreCase": {
             "type": "boolean",
@@ -315,7 +315,7 @@
           }
         }
       },
-      "inputSchemaDigest": "sha256:1719e16b7adf706f60c917518c56a1aff9dfd765ed2041895287f0eee07dfa47"
+      "inputSchemaDigest": "sha256:3f4b0011aa8e151a0f6e6ebd438196deb25e7dc7d5cdc4fe337124878f089a22"
     },
     {
       "name": "find",
@@ -328,7 +328,7 @@
         "properties": {
           "pattern": {
             "type": "string",
-            "description": "Glob pattern to match files, e.g. '*.ts', '**/*.json', or 'src/**/*.spec.ts'"
+            "description": "Glob pattern relative to the search directory, e.g. 'src/**/*.ts'. Without '/', e.g. '*.ts', it matches file names at any depth"
           },
           "path": {
             "type": "string",
@@ -340,7 +340,7 @@
           }
         }
       },
-      "inputSchemaDigest": "sha256:de399f2b4b2fc8a8b3ab87c0f9dba39d882b9c2085153c23ee32fef53c48efba"
+      "inputSchemaDigest": "sha256:3853d299eb5b1a3469b8cd114f3ac47f8972888b2a860da4f4cb5fab3f645a77"
     }
   ]
 }
