@@ -218,6 +218,9 @@ describe("Pi over the ControlledModelPort", () => {
 			expect(text(await call("find", { pattern: "**/*.ts" })), label).toContain("src/a.ts");
 			expect(text(await call("find", { pattern: "*.ts", path: "src" })), label).toContain("a.ts");
 			expect(text(await call("find", { pattern: "src/{a,b}.ts" })), label).toContain("src/b.ts");
+			// Pi 1.6.0's pattern contract: without "/" a pattern matches file names at any depth; a leading "./" is dropped.
+			expect(text(await call("find", { pattern: "*.ts" })), label).toContain("src/a.ts");
+			expect(text(await call("find", { pattern: "./src/*.ts" })), label).toContain("src/a.ts");
 			// The SDK's own ignore list still applies.
 			mkdirSync(path.join(cwd, "node_modules", "dep"), { recursive: true });
 			writeFileSync(path.join(cwd, "node_modules", "dep", "index.js"), "module.exports = 1;\n");
@@ -256,6 +259,9 @@ describe("Pi over the ControlledModelPort", () => {
 			// Patterns whose magic reaches the link or a parent (Node's glob follows both): nothing external is answered.
 			for (const pattern of [
 				"**/*.txt",
+				"*.txt",
+				"*.ts",
+				"./*",
 				"**/*",
 				"src/*/secret.txt",
 				"*/escape/*",
@@ -330,7 +336,7 @@ describe("Pi over the ControlledModelPort", () => {
 });
 
 describe("usageToPi: the Pi diagnostic view of the relay's native counters", () => {
-	it("counts the cached input once (pi-ai 1.4.0 counts input + output + cacheRead + cacheWrite) and keeps the native total", () => {
+	it("counts the cached input once (pi-ai 1.6.0 counts input + output + cacheRead + cacheWrite) and keeps the native total", () => {
 		const u = usageToPi({ inputUnits: "100", outputUnits: "10", reasoningUnits: "0", cachedInputUnits: "30" });
 		expect(u).toMatchObject({ input: 70, cacheRead: 30, cacheWrite: 0, output: 10, totalTokens: 110 });
 		expect(u.input + u.output + u.cacheRead + u.cacheWrite).toBe(u.totalTokens);
